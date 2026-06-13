@@ -1,4 +1,5 @@
 import type { EmotionWord, StateWord, WordData } from '../types/word';
+import { spreadAngle, toPlotFrequency } from './plotTransform';
 
 // プルチックの8基本感情に対応する色相（角度 → hue）
 const PLUTCHIK_HUES: readonly [number, number][] = [
@@ -41,9 +42,9 @@ function frequencyToLightness(frequency: number): number {
 }
 
 export function getEmotionColor(word: EmotionWord): string {
-  const hue = plutchikHue(word.angle);
+  const hue = plutchikHue(spreadAngle(word.angle, word.id));
   const saturation = word.intensity;
-  const lightness = frequencyToLightness(word.frequency);
+  const lightness = frequencyToLightness(toPlotFrequency(word.frequency));
   return `hsl(${hue.toFixed(1)}, ${saturation}%, ${lightness.toFixed(1)}%)`;
 }
 

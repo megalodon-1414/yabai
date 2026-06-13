@@ -8,7 +8,7 @@ import { getWordsForMode, updateWord } from './utils/wordHelpers';
 function App() {
   const [currentMode, setCurrentMode] = useState<'emotion' | 'state'>('emotion');
   const [words, setWords] = useState<WordData[]>(initialWords);
-  const [selectedId, setSelectedId] = useState<string | null>('e1');
+  const [selectedId, setSelectedId] = useState<string | null>('e-1');
   const [isEditorOpen, setIsEditorOpen] = useState(true);
 
   const handleModeChange = (mode: 'emotion' | 'state') => {
@@ -25,6 +25,11 @@ function App() {
 
   const handleWordAdd = (word: WordData) => {
     setWords((prev) => [...prev, word]);
+  };
+
+  const handleWordSelect = (id: string) => {
+    setSelectedId(id);
+    setIsEditorOpen(true);
   };
 
   const handleWordDelete = (id: string) => {
@@ -71,14 +76,19 @@ function App() {
       </header>
 
       <main style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-        <SpaceCanvas words={words} currentMode={currentMode} />
+        <SpaceCanvas
+          words={words}
+          currentMode={currentMode}
+          selectedId={selectedId}
+          onWordSelect={handleWordSelect}
+        />
 
         {isEditorOpen && (
           <WordEditor
             words={words}
             currentMode={currentMode}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={handleWordSelect}
             onChange={handleWordChange}
             onAdd={handleWordAdd}
             onDelete={handleWordDelete}

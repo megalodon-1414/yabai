@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { EmotionWord, StateWord, WordData } from '../types/word';
 import {
   createDefaultWord,
@@ -142,6 +143,12 @@ export function WordEditor({
   const visibleWords = getWordsForMode(words, currentMode);
   const selectedWord = words.find((word) => word.id === selectedId) ?? null;
   const accentColor = currentMode === 'emotion' ? '#4ea8de' : '#4abc96';
+  const listItemRefs = useRef(new Map<string, HTMLButtonElement>());
+
+  useEffect(() => {
+    if (!selectedId) return;
+    listItemRefs.current.get(selectedId)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedId]);
 
   const handleAdd = () => {
     const newWord = createDefaultWord(currentMode);
@@ -192,7 +199,7 @@ export function WordEditor({
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+      <div style={{ maxHeight: '160px', overflowY: 'auto', padding: '8px', flexShrink: 0 }}>
         {visibleWords.map((word) => {
           const isSelected = word.id === selectedId;
 
@@ -200,6 +207,13 @@ export function WordEditor({
             <button
               key={word.id}
               type="button"
+              ref={(element) => {
+                if (element) {
+                  listItemRefs.current.set(word.id, element);
+                } else {
+                  listItemRefs.current.delete(word.id);
+                }
+              }}
               onClick={() => onSelect(word.id)}
               style={{
                 width: '100%',
@@ -222,7 +236,7 @@ export function WordEditor({
       </div>
 
       {selectedWord && (
-        <div style={{ padding: '16px', borderTop: '1px solid #1f2833', overflowY: 'auto', maxHeight: '55%' }}>
+        <div style={{ padding: '16px', borderTop: '1px solid #1f2833', overflowY: 'auto', flex: 1, minHeight: 0 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', color: '#fff' }}>パラメータ編集</h3>
 
           <TextField

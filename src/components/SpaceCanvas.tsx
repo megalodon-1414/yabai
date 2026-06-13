@@ -7,9 +7,11 @@ import { WordPlot } from './WordPlot';
 interface SpaceCanvasProps {
   words: WordData[];
   currentMode: 'emotion' | 'state';
+  selectedId: string | null;
+  onWordSelect: (id: string) => void;
 }
 
-export function SpaceCanvas({ words, currentMode }: SpaceCanvasProps) {
+export function SpaceCanvas({ words, currentMode, selectedId, onWordSelect }: SpaceCanvasProps) {
   return (
     <div style={{ width: '100%', height: '100%', backgroundColor: '#0b0c10' }}>
       <Canvas camera={{ position: [0, 5, 8], fov: 60 }} style={{ width: '100%', height: '100%' }}>
@@ -21,7 +23,13 @@ export function SpaceCanvas({ words, currentMode }: SpaceCanvasProps) {
 
         <Suspense fallback={null}>
           {words.map((word) => (
-            <WordPlot key={word.id} word={word} currentMode={currentMode} />
+            <WordPlot
+              key={word.id}
+              word={word}
+              currentMode={currentMode}
+              isSelected={word.id === selectedId}
+              onSelect={onWordSelect}
+            />
           ))}
         </Suspense>
 
