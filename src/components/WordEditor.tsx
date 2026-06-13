@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { EmotionWord, StateWord, WordData } from '../types/word';
+import { CircularAngleSlider } from './CircularAngleSlider';
 import {
   createDefaultWord,
   getWordsForMode,
@@ -77,6 +78,26 @@ function TextField({
   );
 }
 
+function AngleField({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div style={{ marginBottom: '12px' }}>
+      <span style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem', color: '#c5c6c7' }}>
+        <span>角度 (0〜360°)</span>
+        <span style={{ color: '#45f3ff' }}>{value}°</span>
+      </span>
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <CircularAngleSlider value={value} onChange={onChange} />
+      </div>
+    </div>
+  );
+}
+
 function EmotionFields({
   word,
   onChange,
@@ -86,11 +107,8 @@ function EmotionFields({
 }) {
   return (
     <>
-      <NumberField
-        label="角度 (0〜360°)"
+      <AngleField
         value={word.angle}
-        min={0}
-        max={360}
         onChange={(angle) => onChange({ ...word, angle })}
       />
       <NumberField
