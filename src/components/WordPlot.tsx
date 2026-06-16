@@ -1,41 +1,26 @@
 import { Billboard, Html } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
-import type { WordData } from '../types/word';
-import { getWordColor } from '../utils/wordColor';
-import { spreadAngle, toPlotFrequency } from '../utils/plotTransform';
+import type { UserPlotRow } from '../types/userPlot';
+import { plotColorFromRow, plotPositionFromRow } from '../utils/plotFromUserPlot';
 
 interface WordPlotProps {
-  word: WordData;
-  currentMode: 'emotion' | 'state';
+  plot: UserPlotRow;
+  currentMode: string;
   isSelected: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (wordId: string) => void;
 }
 
-function getPlotPosition(word: WordData): [number, number, number] {
-  if (word.type === 'emotion') {
-    const angle = spreadAngle(word.angle, word.id);
-    const frequency = toPlotFrequency(word.frequency);
-    const rad = (angle * Math.PI) / 180;
-    const x = word.intensity * Math.cos(rad) * 0.05;
-    const y = frequency * 0.05;
-    const z = word.intensity * Math.sin(rad) * 0.05;
-    return [x, y, z];
-  }
-
-  return [word.perception * 0.5, word.frequency * 0.05, word.quality * 0.5];
-}
-
-export function WordPlot({ word, currentMode, isSelected, onSelect }: WordPlotProps) {
-  if (word.type !== currentMode) {
+export function WordPlot({ plot, currentMode, isSelected, onSelect }: WordPlotProps) {
+  if (plot.mode !== currentMode) {
     return null;
   }
 
-  const position = getPlotPosition(word);
-  const color = getWordColor(word);
+  const position = plotPositionFromRow(plot);
+  const color = plotColorFromRow(plot);
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation();
-    onSelect(word.id);
+    onSelect(plot.word_id);
   };
 
   return (
@@ -68,7 +53,7 @@ export function WordPlot({ word, currentMode, isSelected, onSelect }: WordPlotPr
               textShadow: '0 0 8px rgba(0,0,0,0.9)',
             }}
           >
-            {word.text}
+            {plot.word_id}
           </div>
         </Html>
       </Billboard>

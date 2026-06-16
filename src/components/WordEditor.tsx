@@ -1,21 +1,31 @@
 import { useEffect, useRef } from 'react';
-import type { EmotionWord, StateWord, WordData } from '../types/word';
+import type { PlotStatus } from '../hooks/usePlotSubmit';
+import type { UserPlotRow } from '../types/userPlot';
 import { CircularAngleSlider } from './CircularAngleSlider';
-import {
-  createDefaultWord,
-  getWordsForMode,
-  isEmotionWord,
-  isStateWord,
-} from '../utils/wordHelpers';
+import { createDefaultPlot, getPlotsForMode, type PlotMode } from '../utils/plotHelpers';
 
 interface WordEditorProps {
-  words: WordData[];
-  currentMode: 'emotion' | 'state';
+  plots: UserPlotRow[];
+  currentMode: PlotMode;
   selectedId: string | null;
+  plotStatus: PlotStatus;
   onSelect: (id: string) => void;
-  onChange: (word: WordData) => void;
-  onAdd: (word: WordData) => void;
+  onChange: (plot: UserPlotRow, previousId?: string) => void;
+  onAdd: (plot: UserPlotRow) => void;
   onDelete: (id: string) => void;
+}
+
+function plotStatusLabel(status: PlotStatus): string | null {
+  switch (status) {
+    case 'saving':
+      return 'プロット中…';
+    case 'saved':
+      return 'Supabaseに反映しました';
+    case 'error':
+      return 'プロットに失敗しました';
+    default:
+      return null;
+  }
 }
 
 interface FieldProps {
@@ -78,90 +88,55 @@ function TextField({
   );
 }
 
-function AngleField({
+function HueField({
   value,
   onChange,
+  useCircular,
 }: {
   value: number;
   onChange: (value: number) => void;
+  useCircular: boolean;
 }) {
-  return (
-    <div style={{ marginBottom: '12px' }}>
-      <span style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem', color: '#c5c6c7' }}>
-        <span>角度 (0〜360°)</span>
-        <span style={{ color: '#45f3ff' }}>{value}°</span>
-      </span>
-      <div style={{ display: 'flex', justifyContent: 'center' }}>
-        <CircularAngleSlider value={value} onChange={onChange} />
+  if (useCircular) {
+    return (
+      <div style={{ marginBottom: '12px' }}>
+        <span style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem', color: '#c5c6c7' }}>
+          <span>色相 / 角度 (0〜360°)</span>
+          <span style={{ color: '#45f3ff' }}>{Math.round(value)}°</span>
+        </span>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <CircularAngleSlider value={value} onChange={onChange} />
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-function EmotionFields({
-  word,
-  onChange,
-}: {
-  word: EmotionWord;
-  onChange: (word: EmotionWord) => void;
-}) {
   return (
-    <>
-      <AngleField
-        value={word.angle}
-        onChange={(angle) => onChange({ ...word, angle })}
-      />
-      <NumberField
-        label="強度 (0〜100)"
-        value={word.intensity}
-        min={0}
-        max={100}
-        onChange={(intensity) => onChange({ ...word, intensity })}
-      />
-    </>
-  );
-}
-
-function StateFields({
-  word,
-  onChange,
-}: {
-  word: StateWord;
-  onChange: (word: StateWord) => void;
-}) {
-  return (
-    <>
-      <NumberField
-        label="感知 (-10 論理 〜 +10 身体五感)"
-        value={word.perception}
-        min={-10}
-        max={10}
-        onChange={(perception) => onChange({ ...word, perception })}
-      />
-      <NumberField
-        label="善悪 (-10 悪 〜 +10 良)"
-        value={word.quality}
-        min={-10}
-        max={10}
-        onChange={(quality) => onChange({ ...word, quality })}
-      />
-    </>
+    <NumberField
+      label="色相 (0〜360°)"
+      value={value}
+      min={0}
+      max={360}
+      onChange={onChange}
+    />
   );
 }
 
 export function WordEditor({
-  words,
+  plots,
   currentMode,
   selectedId,
+  plotStatus,
   onSelect,
   onChange,
   onAdd,
   onDelete,
 }: WordEditorProps) {
-  const visibleWords = getWordsForMode(words, currentMode);
-  const selectedWord = words.find((word) => word.id === selectedId) ?? null;
+  const visiblePlots = getPlotsForMode(plots, currentMode);
+  const selectedPlot = plots.find((plot) => plot.word_id === selectedId) ?? null;
   const accentColor = currentMode === 'emotion' ? '#4ea8de' : '#4abc96';
   const listItemRefs = useRef(new Map<string, HTMLButtonElement>());
+  const statusLabel = plotStatusLabel(plotStatus);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -169,9 +144,9 @@ export function WordEditor({
   }, [selectedId]);
 
   const handleAdd = () => {
-    const newWord = createDefaultWord(currentMode);
-    onAdd(newWord);
-    onSelect(newWord.id);
+    const newPlot = createDefaultPlot(currentMode);
+    onAdd(newPlot);
+    onSelect(newPlot.word_id);
   };
 
   return (
@@ -194,8 +169,19 @@ export function WordEditor({
       <div style={{ padding: '14px 16px', borderBottom: '1px solid #1f2833' }}>
         <h2 style={{ margin: 0, fontSize: '1rem', color: accentColor }}>単語エディタ</h2>
         <p style={{ margin: '6px 0 0', fontSize: '0.8rem', color: '#9ca3af' }}>
-          {currentMode === 'emotion' ? '感情空間の単語を編集' : '状態空間の単語を編集'}
+          {currentMode === 'emotion' ? '感情空間（編集後はプロットで反映）' : '状態空間（編集後はプロットで反映）'}
         </p>
+        {statusLabel && (
+          <p
+            style={{
+              margin: '6px 0 0',
+              fontSize: '0.75rem',
+              color: plotStatus === 'error' ? '#ff0055' : '#45f3ff',
+            }}
+          >
+            {statusLabel}
+          </p>
+        )}
       </div>
 
       <div style={{ padding: '12px 16px', borderBottom: '1px solid #1f2833' }}>
@@ -218,21 +204,26 @@ export function WordEditor({
       </div>
 
       <div style={{ maxHeight: '160px', overflowY: 'auto', padding: '8px', flexShrink: 0 }}>
-        {visibleWords.map((word) => {
-          const isSelected = word.id === selectedId;
+        {visiblePlots.length === 0 && (
+          <p style={{ margin: '8px 4px', fontSize: '0.85rem', color: '#9ca3af' }}>
+            データがありません。追加するか Supabase にデータを登録してください。
+          </p>
+        )}
+        {visiblePlots.map((plot) => {
+          const isSelected = plot.word_id === selectedId;
 
           return (
             <button
-              key={word.id}
+              key={plot.word_id}
               type="button"
               ref={(element) => {
                 if (element) {
-                  listItemRefs.current.set(word.id, element);
+                  listItemRefs.current.set(plot.word_id, element);
                 } else {
-                  listItemRefs.current.delete(word.id);
+                  listItemRefs.current.delete(plot.word_id);
                 }
               }}
-              onClick={() => onSelect(word.id)}
+              onClick={() => onSelect(plot.word_id)}
               style={{
                 width: '100%',
                 display: 'block',
@@ -247,47 +238,50 @@ export function WordEditor({
                 fontSize: '0.9rem',
               }}
             >
-              {word.text}
+              {plot.word_id}
             </button>
           );
         })}
       </div>
 
-      {selectedWord && (
+      {selectedPlot && (
         <div style={{ padding: '16px', borderTop: '1px solid #1f2833', overflowY: 'auto', flex: 1, minHeight: 0 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', color: '#fff' }}>パラメータ編集</h3>
 
           <TextField
-            label="単語名"
-            value={selectedWord.text}
-            onChange={(text) => onChange({ ...selectedWord, text })}
+            label="単語ID"
+            value={selectedPlot.word_id}
+            onChange={(word_id) =>
+              onChange({ ...selectedPlot, word_id }, selectedPlot.word_id)
+            }
+          />
+
+          <HueField
+            value={selectedPlot.hue}
+            onChange={(hue) => onChange({ ...selectedPlot, hue })}
+            useCircular={currentMode === 'emotion'}
           />
 
           <NumberField
-            label="出現頻度 (0〜100)"
-            value={selectedWord.frequency}
-            min={0}
-            max={100}
-            onChange={(frequency) => onChange({ ...selectedWord, frequency })}
+            label="明度 (25〜80)"
+            value={selectedPlot.brightness}
+            min={25}
+            max={80}
+            step={0.1}
+            onChange={(brightness) => onChange({ ...selectedPlot, brightness })}
           />
 
-          {isEmotionWord(selectedWord) && (
-            <EmotionFields
-              word={selectedWord}
-              onChange={onChange}
-            />
-          )}
-
-          {isStateWord(selectedWord) && (
-            <StateFields
-              word={selectedWord}
-              onChange={onChange}
-            />
-          )}
+          <NumberField
+            label="彩度 (0〜100)"
+            value={selectedPlot.saturation}
+            min={0}
+            max={100}
+            onChange={(saturation) => onChange({ ...selectedPlot, saturation })}
+          />
 
           <button
             type="button"
-            onClick={() => onDelete(selectedWord.id)}
+            onClick={() => onDelete(selectedPlot.word_id)}
             style={{
               width: '100%',
               marginTop: '8px',

@@ -2,7 +2,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import type { WordData } from '../types/word';
+import type { UserPlotRow } from '../types/userPlot';
 import { WordPlot } from './WordPlot';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 5, 8];
@@ -10,7 +10,7 @@ const DEFAULT_CAMERA_TARGET: [number, number, number] = [0, 0, 0];
 const DEFAULT_CAMERA_FOV = 60;
 
 interface SpaceCanvasProps {
-  words: WordData[];
+  plots: UserPlotRow[];
   currentMode: 'emotion' | 'state';
   selectedId: string | null;
   onWordSelect: (id: string) => void;
@@ -39,7 +39,7 @@ function CameraControls({ resetCount }: { resetCount: number }) {
   return <OrbitControls ref={controlsRef} enableDamping />;
 }
 
-export function SpaceCanvas({ words, currentMode, selectedId, onWordSelect }: SpaceCanvasProps) {
+export function SpaceCanvas({ plots, currentMode, selectedId, onWordSelect }: SpaceCanvasProps) {
   const [resetCount, setResetCount] = useState(0);
 
   return (
@@ -75,12 +75,12 @@ export function SpaceCanvas({ words, currentMode, selectedId, onWordSelect }: Sp
         <CameraControls resetCount={resetCount} />
 
         <Suspense fallback={null}>
-          {words.map((word) => (
+          {plots.map((plot) => (
             <WordPlot
-              key={word.id}
-              word={word}
+              key={plot.word_id}
+              plot={plot}
               currentMode={currentMode}
-              isSelected={word.id === selectedId}
+              isSelected={plot.word_id === selectedId}
               onSelect={onWordSelect}
             />
           ))}
