@@ -6,7 +6,7 @@ import type { UserPlotRow } from '../types/userPlot';
 import { getAtmosphericAppearance } from '../utils/plotAtmosphere';
 import { plotColorFromRow, plotPositionFromRow } from '../utils/plotFromUserPlot';
 import { SELECTED_PLOT_SCALE } from '../utils/plotSelectionStyle';
-import { getPlotLabelStyle } from '../utils/plotLabelStyle';
+import { getPlotLabelStyle, getPlotLabelTypography } from '../utils/plotLabelStyle';
 
 const VISIBILITY_LERP_SPEED = 6;
 const VISIBILITY_INTERACTION_THRESHOLD = 0.08;
@@ -31,6 +31,10 @@ export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSel
   const labelStyle = useMemo(
     () => getPlotLabelStyle(size.width, size.height, isSelected),
     [size.width, size.height, isSelected],
+  );
+  const labelTypography = useMemo(
+    () => getPlotLabelTypography(plot, isSelected),
+    [plot, isSelected],
   );
   const position = useMemo(() => plotPositionFromRow(plot), [plot]);
   const color = useMemo(() => plotColorFromRow(plot), [plot]);
@@ -118,10 +122,11 @@ export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSel
           style={{
             color,
             fontSize: labelStyle.fontSize,
-            fontWeight: isSelected ? 700 : 400,
+            fontWeight: labelTypography.fontWeight,
+            fontVariationSettings: labelTypography.fontVariationSettings,
             writingMode: 'vertical-rl',
             textOrientation: 'upright',
-            fontFamily: 'system-ui, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif',
+            fontFamily: 'var(--font-family-app)',
             textShadow: '0 0 8px rgba(0,0,0,0.9)',
             transform: `translateY(calc(50% + ${labelStyle.screenOffsetY}px))`,
           }}

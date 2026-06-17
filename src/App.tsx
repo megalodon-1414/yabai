@@ -88,7 +88,7 @@ function App() {
   };
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', color: '#fff', backgroundColor: '#0b0c10', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', color: '#fff', backgroundColor: '#0b0c10', overflow: 'hidden' }}>
       <header style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1f2833' }}>
         <h1 style={{ margin: 0, fontSize: '1.5rem', color: '#45f3ff' }}>応プロ: 「ヤバい」可視化システム</h1>
 

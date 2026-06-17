@@ -1,14 +1,28 @@
 import { SELECTED_PLOT_SCALE } from './plotSelectionStyle';
+import type { UserPlotRow } from '../types/userPlot';
 
 const MIN_FONT_SIZE = 6;
 const MAX_FONT_SIZE = 12;
 const FONT_SIZE_RATIO = 0.024;
 const DISTANCE_FACTOR_RATIO = 0.56;
+const FONT_WEIGHT_MIN = 200;
+const FONT_WEIGHT_MAX = 900;
+const FONT_WIDTH_MIN = 50;
+const FONT_WIDTH_MAX = 150;
 
 export interface PlotLabelStyle {
   fontSize: string;
   distanceFactor: number;
   screenOffsetY: number;
+}
+
+export interface PlotLabelTypography {
+  fontWeight: number;
+  fontVariationSettings: string;
+}
+
+function normalize(value: number, min: number, max: number): number {
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
 }
 
 export function getPlotLabelStyle(
@@ -28,5 +42,20 @@ export function getPlotLabelStyle(
     fontSize: `${fontSize}px`,
     distanceFactor: baseFontSize * DISTANCE_FACTOR_RATIO,
     screenOffsetY,
+  };
+}
+
+export function getPlotLabelTypography(plot: UserPlotRow, isSelected: boolean): PlotLabelTypography {
+  const brightness = normalize(plot.brightness, 15, 95);
+  const saturation = normalize(plot.saturation, 0, 100);
+  const selectedWeightBoost = isSelected ? 80 : 0;
+  const fontWeight = Math.round(
+    Math.min(FONT_WEIGHT_MAX, FONT_WEIGHT_MIN + brightness * (FONT_WEIGHT_MAX - FONT_WEIGHT_MIN) + selectedWeightBoost),
+  );
+  const fontWidth = Math.round(FONT_WIDTH_MIN + saturation * (FONT_WIDTH_MAX - FONT_WIDTH_MIN));
+
+  return {
+    fontWeight,
+    fontVariationSettings: `"ital" 0, "wdth" ${fontWidth}, "wght" ${fontWeight}`,
   };
 }

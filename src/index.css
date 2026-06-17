@@ -1,3 +1,7 @@
+:root {
+  --font-family-app: 'momochidori-variable', sans-serif;
+}
+
 *,
 *::before,
 *::after {
@@ -15,7 +19,7 @@ body,
 }
 
 body {
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-family-app);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
