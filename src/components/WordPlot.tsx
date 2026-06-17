@@ -5,21 +5,27 @@ import * as THREE from 'three';
 import type { UserPlotRow } from '../types/userPlot';
 import { getAtmosphericAppearance } from '../utils/plotAtmosphere';
 import { plotColorFromRow, plotPositionFromRow } from '../utils/plotFromUserPlot';
+import { SELECTED_PLOT_SCALE } from '../utils/plotSelectionStyle';
 import { getPlotLabelStyle } from '../utils/plotLabelStyle';
+
+const VISIBILITY_LERP_SPEED = 6;
+const VISIBILITY_INTERACTION_THRESHOLD = 0.08;
 
 interface WordPlotProps {
   plot: UserPlotRow;
   currentMode: string;
   isSelected: boolean;
+  isNearbyVisible: boolean;
   onSelect: (wordId: string) => void;
 }
 
-export function WordPlot({ plot, currentMode, isSelected, onSelect }: WordPlotProps) {
+export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSelect }: WordPlotProps) {
   const { size, camera } = useThree();
   const meshRef = useRef<THREE.Mesh>(null);
   const labelRef = useRef<HTMLDivElement>(null);
   const worldPosition = useRef(new THREE.Vector3());
   const fadedColor = useRef(new THREE.Color());
+  const visibility = useRef(isNearbyVisible ? 1 : 0);
   const isVisible = plot.mode === currentMode;
 
   const labelStyle = useMemo(
@@ -34,23 +40,39 @@ export function WordPlot({ plot, currentMode, isSelected, onSelect }: WordPlotPr
     return parsed;
   }, [color]);
 
-  useFrame(() => {
+  useFrame((_, delta) => {
     if (!isVisible) return;
 
     const mesh = meshRef.current;
     if (!mesh) return;
 
+    const targetVisibility = isNearbyVisible ? 1 : 0;
+    const t = 1 - Math.exp(-VISIBILITY_LERP_SPEED * delta);
+    visibility.current = THREE.MathUtils.lerp(visibility.current, targetVisibility, t);
+
+    const visibilityFactor = visibility.current;
+    const isRendered = visibilityFactor > 0.01;
+    mesh.visible = isRendered;
+
+    if (!isRendered) {
+      if (labelRef.current) {
+        labelRef.current.style.opacity = '0';
+      }
+      return;
+    }
+
     mesh.getWorldPosition(worldPosition.current);
     const distance = camera.position.distanceTo(worldPosition.current);
     const appearance = getAtmosphericAppearance(distance, baseColor, isSelected, fadedColor.current);
     const material = mesh.material as THREE.MeshBasicMaterial;
+    const finalOpacity = appearance.opacity * visibilityFactor;
 
-    material.opacity = appearance.opacity;
-    material.transparent = appearance.opacity < 1;
+    material.opacity = finalOpacity;
+    material.transparent = true;
     material.color.copy(appearance.color);
 
     if (labelRef.current) {
-      labelRef.current.style.opacity = String(appearance.opacity);
+      labelRef.current.style.opacity = String(finalOpacity);
       labelRef.current.style.color = appearance.color.getStyle();
     }
   });
@@ -60,6 +82,10 @@ export function WordPlot({ plot, currentMode, isSelected, onSelect }: WordPlotPr
   }
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    if (visibility.current < VISIBILITY_INTERACTION_THRESHOLD) {
+      return;
+    }
+
     event.stopPropagation();
     onSelect(plot.word_id);
   };
@@ -68,9 +94,13 @@ export function WordPlot({ plot, currentMode, isSelected, onSelect }: WordPlotPr
     <group position={position}>
       <mesh
         ref={meshRef}
-        scale={isSelected ? 1.5 : 1}
+        scale={isSelected ? SELECTED_PLOT_SCALE : 1}
         onClick={handleClick}
         onPointerOver={(event) => {
+          if (visibility.current < VISIBILITY_INTERACTION_THRESHOLD) {
+            return;
+          }
+
           event.stopPropagation();
           document.body.style.cursor = 'pointer';
         }}
@@ -78,7 +108,7 @@ export function WordPlot({ plot, currentMode, isSelected, onSelect }: WordPlotPr
           document.body.style.cursor = 'auto';
         }}
       >
-        <sphereGeometry args={[0.09, 16, 16]} />
+        <sphereGeometry args={[0.06, 16, 16]} />
         <meshBasicMaterial color={color} transparent />
       </mesh>
 
