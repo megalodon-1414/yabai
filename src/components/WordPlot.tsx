@@ -1,7 +1,9 @@
 import { Billboard, Html } from '@react-three/drei';
-import type { ThreeEvent } from '@react-three/fiber';
+import { useThree, type ThreeEvent } from '@react-three/fiber';
+import { useMemo } from 'react';
 import type { UserPlotRow } from '../types/userPlot';
 import { plotColorFromRow, plotPositionFromRow } from '../utils/plotFromUserPlot';
+import { getPlotLabelStyle } from '../utils/plotLabelStyle';
 
 interface WordPlotProps {
   plot: UserPlotRow;
@@ -11,6 +13,12 @@ interface WordPlotProps {
 }
 
 export function WordPlot({ plot, currentMode, isSelected, onSelect }: WordPlotProps) {
+  const { size } = useThree();
+  const labelStyle = useMemo(
+    () => getPlotLabelStyle(size.width, size.height, isSelected),
+    [size.width, size.height, isSelected],
+  );
+
   if (plot.mode !== currentMode) {
     return null;
   }
@@ -41,11 +49,11 @@ export function WordPlot({ plot, currentMode, isSelected, onSelect }: WordPlotPr
       </mesh>
 
       <Billboard position={[0.2, 0.15, 0]}>
-        <Html center distanceFactor={10} style={{ pointerEvents: 'none', userSelect: 'none' }}>
+        <Html center distanceFactor={labelStyle.distanceFactor} style={{ pointerEvents: 'none', userSelect: 'none' }}>
           <div
             style={{
               color,
-              fontSize: '18px',
+              fontSize: labelStyle.fontSize,
               fontWeight: isSelected ? 700 : 400,
               writingMode: 'vertical-rl',
               textOrientation: 'upright',
