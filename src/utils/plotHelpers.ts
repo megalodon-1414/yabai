@@ -1,19 +1,11 @@
 import type { UserPlotRow } from '../types/userPlot';
+import { createDefaultEmotionVector } from '../emotionSpace/migrate';
 
-export type PlotMode = 'emotion' | 'state';
-
-export function createDefaultPlot(mode: PlotMode): UserPlotRow {
+export function createDefaultPlot(): UserPlotRow {
   return {
-    word_id: `${mode[0]}-${Date.now()}`,
-    mode,
-    hue: mode === 'emotion' ? 0 : 180,
-    brightness: 52.5,
-    saturation: 50,
+    word_id: `w-${Date.now()}`,
+    emotions: createDefaultEmotionVector(),
   };
-}
-
-export function getPlotsForMode(plots: UserPlotRow[], mode: PlotMode): UserPlotRow[] {
-  return plots.filter((plot) => plot.mode === mode);
 }
 
 export function updatePlot(plots: UserPlotRow[], updated: UserPlotRow): UserPlotRow[] {

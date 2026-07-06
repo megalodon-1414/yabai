@@ -9,11 +9,10 @@ import { buildEmotionSpaceDotsGeometry, emotionSpaceDotShaders } from '../utils/
 const DEFAULT_DOT_SIZE = 0.04;
 
 interface SpaceDots3DProps {
-  currentMode: 'emotion' | 'state';
   dotSize?: number;
 }
 
-export function SpaceDots3D({ currentMode, dotSize = DEFAULT_DOT_SIZE }: SpaceDots3DProps) {
+export function SpaceDots3D({ dotSize = DEFAULT_DOT_SIZE }: SpaceDots3DProps) {
   const geometry = useMemo(() => buildEmotionSpaceDotsGeometry(), []);
 
   const uniforms = useMemo(
@@ -25,10 +24,6 @@ export function SpaceDots3D({ currentMode, dotSize = DEFAULT_DOT_SIZE }: SpaceDo
     }),
     [dotSize],
   );
-
-  if (currentMode !== 'emotion') {
-    return null;
-  }
 
   return (
     <points geometry={geometry}>

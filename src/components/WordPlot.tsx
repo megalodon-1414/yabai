@@ -13,20 +13,18 @@ const VISIBILITY_INTERACTION_THRESHOLD = 0.08;
 
 interface WordPlotProps {
   plot: UserPlotRow;
-  currentMode: string;
   isSelected: boolean;
   isNearbyVisible: boolean;
   onSelect: (wordId: string) => void;
 }
 
-export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSelect }: WordPlotProps) {
+export function WordPlot({ plot, isSelected, isNearbyVisible, onSelect }: WordPlotProps) {
   const { size, camera } = useThree();
   const meshRef = useRef<THREE.Mesh>(null);
   const labelRef = useRef<HTMLDivElement>(null);
   const worldPosition = useRef(new THREE.Vector3());
   const fadedColor = useRef(new THREE.Color());
   const visibility = useRef(isNearbyVisible ? 1 : 0);
-  const isVisible = plot.mode === currentMode;
 
   const labelStyle = useMemo(
     () => getPlotLabelStyle(size.width, size.height, isSelected),
@@ -45,8 +43,6 @@ export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSel
   }, [color]);
 
   useFrame((_, delta) => {
-    if (!isVisible) return;
-
     const mesh = meshRef.current;
     if (!mesh) return;
 
@@ -80,10 +76,6 @@ export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSel
       labelRef.current.style.color = appearance.color.getStyle();
     }
   });
-
-  if (!isVisible) {
-    return null;
-  }
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     if (visibility.current < VISIBILITY_INTERACTION_THRESHOLD) {

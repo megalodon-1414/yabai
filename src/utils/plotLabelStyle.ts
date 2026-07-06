@@ -1,5 +1,6 @@
 import { SELECTED_PLOT_SCALE } from './plotSelectionStyle';
 import type { UserPlotRow } from '../types/userPlot';
+import { getEmotionDominance, getPlotSpread } from '../emotionSpace/plotColor';
 
 const MIN_FONT_SIZE = 6;
 const MAX_FONT_SIZE = 12;
@@ -19,10 +20,6 @@ export interface PlotLabelStyle {
 export interface PlotLabelTypography {
   fontWeight: number;
   fontVariationSettings: string;
-}
-
-function normalize(value: number, min: number, max: number): number {
-  return Math.max(0, Math.min(1, (value - min) / (max - min)));
 }
 
 export function getPlotLabelStyle(
@@ -46,13 +43,13 @@ export function getPlotLabelStyle(
 }
 
 export function getPlotLabelTypography(plot: UserPlotRow, isSelected: boolean): PlotLabelTypography {
-  const brightness = normalize(plot.brightness, 15, 95);
-  const saturation = normalize(plot.saturation, 0, 100);
+  const dominance = getEmotionDominance(plot.emotions);
+  const spread = getPlotSpread(plot.emotions);
   const selectedWeightBoost = isSelected ? 80 : 0;
   const fontWeight = Math.round(
-    Math.min(FONT_WEIGHT_MAX, FONT_WEIGHT_MIN + brightness * (FONT_WEIGHT_MAX - FONT_WEIGHT_MIN) + selectedWeightBoost),
+    Math.min(FONT_WEIGHT_MAX, FONT_WEIGHT_MIN + dominance * (FONT_WEIGHT_MAX - FONT_WEIGHT_MIN) + selectedWeightBoost),
   );
-  const fontWidth = Math.round(FONT_WIDTH_MIN + saturation * (FONT_WIDTH_MAX - FONT_WIDTH_MIN));
+  const fontWidth = Math.round(FONT_WIDTH_MIN + spread * (FONT_WIDTH_MAX - FONT_WIDTH_MIN));
 
   return {
     fontWeight,

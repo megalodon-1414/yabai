@@ -1,12 +1,11 @@
 import { useEffect, useRef } from 'react';
 import type { PlotStatus } from '../hooks/usePlotSubmit';
 import type { UserPlotRow } from '../types/userPlot';
-import { CircularAngleSlider } from './CircularAngleSlider';
-import { createDefaultPlot, getPlotsForMode, type PlotMode } from '../utils/plotHelpers';
+import { EmotionRadarChart } from './EmotionRadarChart';
+import { createDefaultPlot } from '../utils/plotHelpers';
 
 interface WordEditorProps {
   plots: UserPlotRow[];
-  currentMode: PlotMode;
   selectedId: string | null;
   plotStatus: PlotStatus;
   onSelect: (id: string) => void;
@@ -26,35 +25,6 @@ function plotStatusLabel(status: PlotStatus): string | null {
     default:
       return null;
   }
-}
-
-interface FieldProps {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  onChange: (value: number) => void;
-}
-
-function NumberField({ label, value, min, max, step = 1, onChange }: FieldProps) {
-  return (
-    <label style={{ display: 'block', marginBottom: '12px' }}>
-      <span style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '0.85rem', color: '#c5c6c7' }}>
-        <span>{label}</span>
-        <span style={{ color: '#45f3ff' }}>{value}</span>
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        style={{ width: '100%', accentColor: '#45f3ff' }}
-      />
-    </label>
-  );
 }
 
 function TextField({
@@ -88,43 +58,8 @@ function TextField({
   );
 }
 
-function HueField({
-  value,
-  onChange,
-  useCircular,
-}: {
-  value: number;
-  onChange: (value: number) => void;
-  useCircular: boolean;
-}) {
-  if (useCircular) {
-    return (
-      <div style={{ marginBottom: '12px' }}>
-        <span style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem', color: '#c5c6c7' }}>
-          <span>色相 / 角度 (0〜360°)</span>
-          <span style={{ color: '#45f3ff' }}>{Math.round(value)}°</span>
-        </span>
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <CircularAngleSlider value={value} onChange={onChange} />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <NumberField
-      label="色相 (0〜360°)"
-      value={value}
-      min={0}
-      max={360}
-      onChange={onChange}
-    />
-  );
-}
-
 export function WordEditor({
   plots,
-  currentMode,
   selectedId,
   plotStatus,
   onSelect,
@@ -132,11 +67,10 @@ export function WordEditor({
   onAdd,
   onDelete,
 }: WordEditorProps) {
-  const visiblePlots = getPlotsForMode(plots, currentMode);
   const selectedPlot = plots.find((plot) => plot.word_id === selectedId) ?? null;
-  const accentColor = currentMode === 'emotion' ? '#4ea8de' : '#4abc96';
   const listItemRefs = useRef(new Map<string, HTMLButtonElement>());
   const statusLabel = plotStatusLabel(plotStatus);
+  const accentColor = '#4ea8de';
 
   useEffect(() => {
     if (!selectedId) return;
@@ -144,7 +78,7 @@ export function WordEditor({
   }, [selectedId]);
 
   const handleAdd = () => {
-    const newPlot = createDefaultPlot(currentMode);
+    const newPlot = createDefaultPlot();
     onAdd(newPlot);
     onSelect(newPlot.word_id);
   };
@@ -155,7 +89,7 @@ export function WordEditor({
         position: 'absolute',
         top: '16px',
         right: '16px',
-        width: '300px',
+        width: '320px',
         maxHeight: 'calc(100% - 32px)',
         display: 'flex',
         flexDirection: 'column',
@@ -169,7 +103,7 @@ export function WordEditor({
       <div style={{ padding: '14px 16px', borderBottom: '1px solid #1f2833' }}>
         <h2 style={{ margin: 0, fontSize: '1rem', color: accentColor }}>単語エディタ</h2>
         <p style={{ margin: '6px 0 0', fontSize: '0.8rem', color: '#9ca3af' }}>
-          {currentMode === 'emotion' ? '感情空間（編集後はプロットで反映）' : '状態空間（編集後はプロットで反映）'}
+          感情宇宙空間（8感情レーダー / 編集後はプロットで反映）
         </p>
         {statusLabel && (
           <p
@@ -203,13 +137,13 @@ export function WordEditor({
         </button>
       </div>
 
-      <div style={{ maxHeight: '160px', overflowY: 'auto', padding: '8px', flexShrink: 0 }}>
-        {visiblePlots.length === 0 && (
+      <div style={{ maxHeight: '140px', overflowY: 'auto', padding: '8px', flexShrink: 0 }}>
+        {plots.length === 0 && (
           <p style={{ margin: '8px 4px', fontSize: '0.85rem', color: '#9ca3af' }}>
             データがありません。追加するか Supabase にデータを登録してください。
           </p>
         )}
-        {visiblePlots.map((plot) => {
+        {plots.map((plot) => {
           const isSelected = plot.word_id === selectedId;
 
           return (
@@ -256,27 +190,9 @@ export function WordEditor({
             }
           />
 
-          <HueField
-            value={selectedPlot.hue}
-            onChange={(hue) => onChange({ ...selectedPlot, hue })}
-            useCircular={currentMode === 'emotion'}
-          />
-
-          <NumberField
-            label="明度 (25〜80)"
-            value={selectedPlot.brightness}
-            min={25}
-            max={80}
-            step={0.1}
-            onChange={(brightness) => onChange({ ...selectedPlot, brightness })}
-          />
-
-          <NumberField
-            label="彩度 (0〜100)"
-            value={selectedPlot.saturation}
-            min={0}
-            max={100}
-            onChange={(saturation) => onChange({ ...selectedPlot, saturation })}
+          <EmotionRadarChart
+            values={selectedPlot.emotions}
+            onChange={(emotions) => onChange({ ...selectedPlot, emotions })}
           />
 
           <button

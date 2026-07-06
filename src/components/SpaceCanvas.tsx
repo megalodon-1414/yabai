@@ -7,10 +7,11 @@ import type { UserPlotRow } from '../types/userPlot';
 import { getNearbyPlotIds, plotPositionFromRow } from '../utils/plotFromUserPlot';
 import { applySelectionViewOffset, clearSelectionViewOffset } from '../utils/cameraFocus';
 import { SpaceDots3D } from './SpaceDots3D';
+import { EmotionGalaxyCenters } from './EmotionGalaxyCenters';
 import { WordPlot } from './WordPlot';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 5, 8];
-const DEFAULT_CAMERA_TARGET: [number, number, number] = [0, 1.5, 0];
+const DEFAULT_CAMERA_TARGET: [number, number, number] = [0, 0, 0];
 const DEFAULT_CAMERA_FOV = 60;
 const SELECTION_CAMERA_DISTANCE = 2;
 const DEFAULT_CAMERA_DISTANCE = new THREE.Vector3(...DEFAULT_CAMERA_POSITION).distanceTo(
@@ -23,7 +24,6 @@ type FocusPhase = 'idle' | 'movingTarget' | 'movingView' | 'adjustingZoom' | 'fo
 
 interface SpaceCanvasProps {
   plots: UserPlotRow[];
-  currentMode: 'emotion' | 'state';
   selectedId: string | null;
   onWordSelect: (id: string) => void;
 }
@@ -206,7 +206,8 @@ function CameraControls({ resetCount, cameraTarget, focusOnSelection }: CameraCo
   );
 }
 
-export function SpaceCanvas({ plots, currentMode, selectedId, onWordSelect }: SpaceCanvasProps) {  const [resetCount, setResetCount] = useState(0);
+export function SpaceCanvas({ plots, selectedId, onWordSelect }: SpaceCanvasProps) {
+  const [resetCount, setResetCount] = useState(0);
   const [isDefaultView, setIsDefaultView] = useState(false);
 
   const cameraTarget = useMemo((): [number, number, number] => {
@@ -214,21 +215,21 @@ export function SpaceCanvas({ plots, currentMode, selectedId, onWordSelect }: Sp
       return DEFAULT_CAMERA_TARGET;
     }
 
-    const selected = plots.find((plot) => plot.word_id === selectedId && plot.mode === currentMode);
+    const selected = plots.find((plot) => plot.word_id === selectedId);
     if (!selected) {
       return DEFAULT_CAMERA_TARGET;
     }
 
     return plotPositionFromRow(selected);
-  }, [isDefaultView, selectedId, plots, currentMode]);
+  }, [isDefaultView, selectedId, plots]);
 
   const nearbyPlotIds = useMemo(() => {
     if (!selectedId || isDefaultView) {
       return null;
     }
 
-    return getNearbyPlotIds(plots, selectedId, currentMode);
-  }, [plots, selectedId, currentMode, isDefaultView]);
+    return getNearbyPlotIds(plots, selectedId);
+  }, [plots, selectedId, isDefaultView]);
 
   const handleWordSelect = (id: string) => {
     setIsDefaultView(false);
@@ -280,12 +281,14 @@ export function SpaceCanvas({ plots, currentMode, selectedId, onWordSelect }: Sp
           focusOnSelection={!isDefaultView && selectedId !== null}
         />
 
+        <SpaceDots3D />
+        <EmotionGalaxyCenters />
+
         <Suspense fallback={null}>
           {plots.map((plot) => (
             <WordPlot
               key={plot.word_id}
               plot={plot}
-              currentMode={currentMode}
               isSelected={plot.word_id === selectedId}
               isNearbyVisible={!nearbyPlotIds || nearbyPlotIds.has(plot.word_id)}
               onSelect={handleWordSelect}
@@ -293,7 +296,7 @@ export function SpaceCanvas({ plots, currentMode, selectedId, onWordSelect }: Sp
           ))}
         </Suspense>
 
-        <SpaceDots3D currentMode={currentMode} />
+        <SpaceDots3D />
       </Canvas>
     </div>
   );

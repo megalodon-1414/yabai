@@ -1,13 +1,11 @@
 import { supabase } from '../lib/supabase';
 import type { UserPlotRow } from '../types/userPlot';
+import { clampEmotionVector, parseUserPlotRow } from '../emotionSpace/migrate';
 
 function normalizeRow(row: UserPlotRow) {
   return {
     word_id: row.word_id,
-    mode: row.mode,
-    hue: Math.round(row.hue * 100) / 100,
-    brightness: Math.round(row.brightness * 100) / 100,
-    saturation: Math.round(row.saturation * 100) / 100,
+    emotions: clampEmotionVector(row.emotions),
   };
 }
 
@@ -18,7 +16,9 @@ export async function fetchUserPlots(): Promise<UserPlotRow[]> {
     throw new Error(error.message);
   }
 
-  return (data ?? []) as UserPlotRow[];
+  return (data ?? [])
+    .map((row) => parseUserPlotRow(row))
+    .filter((row): row is UserPlotRow => row !== null);
 }
 
 export async function syncUserPlots(plots: UserPlotRow[]): Promise<void> {

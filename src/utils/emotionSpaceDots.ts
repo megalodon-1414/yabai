@@ -1,59 +1,75 @@
 import * as THREE from 'three';
-import { emotionPositionFromParams } from './plotFromUserPlot';
+import type { EmotionVector } from '../types/userPlot';
+import { ALL_ANCHORS } from '../emotionSpace/anchors';
+import { PRIMARY_EMOTIONS } from '../emotionSpace/emotions';
+import { createDefaultEmotionVector } from '../emotionSpace/migrate';
+import { emotionPositionFromVector } from '../emotionSpace/plotPosition';
 
-const DEFAULT_HUE_STEP = 20;
-const DEFAULT_SATURATION_STEP = 20;
-const DEFAULT_BRIGHTNESS_STEP = 10;
-const DOT_SATURATION_MAX = 120;
-const DOT_BRIGHTNESS_MIN = 15;
-const DOT_BRIGHTNESS_MAX = 95;
-const MIN_ALPHA = 0.06;
-const MAX_ALPHA = 0.42;
+const PRIMARY_JITTER = 0.32;
+const DYAD_JITTER = 0.2;
+const PRIMARY_SAMPLES = 30;
+const DYAD_SAMPLES = 5;
+const RANDOM_SAMPLES = 220;
 
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value));
+function biasedEmotionVector(): EmotionVector {
+  const vector = createDefaultEmotionVector();
+  const mode = Math.random();
+
+  if (mode < 0.45) {
+    const dominant = PRIMARY_EMOTIONS[Math.floor(Math.random() * PRIMARY_EMOTIONS.length)];
+    for (const emotion of PRIMARY_EMOTIONS) {
+      vector[emotion] = emotion === dominant
+        ? 55 + Math.random() * 45
+        : Math.random() * 35;
+    }
+    return vector;
+  }
+
+  const i = Math.floor(Math.random() * PRIMARY_EMOTIONS.length);
+  const a = PRIMARY_EMOTIONS[i];
+  const dist = 1 + Math.floor(Math.random() * 3);
+  const b = PRIMARY_EMOTIONS[(i + dist) % PRIMARY_EMOTIONS.length];
+  for (const emotion of PRIMARY_EMOTIONS) {
+    if (emotion === a || emotion === b) {
+      vector[emotion] = 42 + Math.random() * 48;
+    } else {
+      vector[emotion] = Math.random() * 22;
+    }
+  }
+  return vector;
 }
 
-function smoothstep(edge0: number, edge1: number, value: number): number {
-  const t = clamp01((value - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
+function jitterPosition(
+  position: [number, number, number],
+  amount: number,
+): [number, number, number] {
+  return [
+    position[0] + (Math.random() - 0.5) * amount,
+    position[1] + (Math.random() - 0.5) * amount,
+    position[2] + (Math.random() - 0.5) * amount,
+  ];
 }
 
-function alphaFromCenterDistance(x: number, y: number, z: number, maxDistance: number): number {
-  const distance = Math.hypot(x, y, z);
-  const fade = smoothstep(0, maxDistance, distance);
-  return THREE.MathUtils.lerp(MAX_ALPHA, MIN_ALPHA, fade);
-}
-
-interface EmotionSpaceDotsOptions {
-  hueStep?: number;
-  saturationStep?: number;
-  brightnessStep?: number;
-}
-
-export function buildEmotionSpaceDotsGeometry(
-  {
-    hueStep = DEFAULT_HUE_STEP,
-    saturationStep = DEFAULT_SATURATION_STEP,
-    brightnessStep = DEFAULT_BRIGHTNESS_STEP,
-  }: EmotionSpaceDotsOptions = {},
-): THREE.BufferGeometry {
+export function buildEmotionSpaceDotsGeometry(): THREE.BufferGeometry {
   const positions: number[] = [];
   const alphas: number[] = [];
 
-  const maxDistance = (() => {
-    const [x, y, z] = emotionPositionFromParams(0, DOT_SATURATION_MAX, DOT_BRIGHTNESS_MAX);
-    return Math.hypot(x, y, z);
-  })();
+  for (const anchor of ALL_ANCHORS) {
+    const isPrimary = anchor.kind === 'primary';
+    const count = isPrimary ? PRIMARY_SAMPLES : DYAD_SAMPLES;
+    const jitter = isPrimary ? PRIMARY_JITTER : DYAD_JITTER;
 
-  for (let hue = 0; hue < 360; hue += hueStep) {
-    for (let saturation = 0; saturation <= DOT_SATURATION_MAX; saturation += saturationStep) {
-      for (let brightness = DOT_BRIGHTNESS_MIN; brightness <= DOT_BRIGHTNESS_MAX; brightness += brightnessStep) {
-        const [x, y, z] = emotionPositionFromParams(hue, saturation, brightness);
-        positions.push(x, y, z);
-        alphas.push(alphaFromCenterDistance(x, y, z, maxDistance));
-      }
+    for (let i = 0; i < count; i += 1) {
+      const [x, y, z] = jitterPosition(anchor.position, jitter);
+      positions.push(x, y, z);
+      alphas.push(isPrimary ? 0.38 : 0.14);
     }
+  }
+
+  for (let i = 0; i < RANDOM_SAMPLES; i += 1) {
+    const [x, y, z] = emotionPositionFromVector(biasedEmotionVector());
+    positions.push(x, y, z);
+    alphas.push(0.1);
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -72,11 +88,11 @@ export const emotionSpaceDotShaders = {
     uniform float minCameraOpacity;
 
     void main() {
+      vAlpha = alpha;
       vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      float cameraDistance = length(mvPosition.xyz);
-      float cameraFade = smoothstep(nearDistance, farDistance, cameraDistance);
-      float cameraOpacity = mix(1.0, minCameraOpacity, cameraFade);
-      vAlpha = alpha * cameraOpacity;
+      float dist = length(mvPosition.xyz);
+      float cameraFade = smoothstep(farDistance, nearDistance, dist);
+      vAlpha *= mix(minCameraOpacity, 1.0, cameraFade);
       gl_PointSize = size * (300.0 / -mvPosition.z);
       gl_Position = projectionMatrix * mvPosition;
     }
@@ -86,11 +102,10 @@ export const emotionSpaceDotShaders = {
 
     void main() {
       vec2 center = gl_PointCoord - vec2(0.5);
-      if (length(center) > 0.5) {
-        discard;
-      }
-
-      gl_FragColor = vec4(1.0, 1.0, 1.0, vAlpha);
+      float dist = length(center);
+      if (dist > 0.5) discard;
+      float edge = smoothstep(0.5, 0.2, dist);
+      gl_FragColor = vec4(0.55, 0.75, 0.95, vAlpha * edge);
     }
   `,
 };

@@ -5,15 +5,12 @@ import { usePlotSubmit } from './hooks/usePlotSubmit';
 import { fetchUserPlots } from './services/userPlots';
 import type { UserPlotRow } from './types/userPlot';
 import {
-  getPlotsForMode,
-  type PlotMode,
   removePlotById,
   replacePlotId,
   updatePlot,
 } from './utils/plotHelpers';
 
 function App() {
-  const [currentMode, setCurrentMode] = useState<PlotMode>('emotion');
   const [plots, setPlots] = useState<UserPlotRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(true);
@@ -47,17 +44,8 @@ function App() {
 
   useEffect(() => {
     if (selectedId) return;
-    const first = getPlotsForMode(plots, currentMode)[0];
-    if (first) setSelectedId(first.word_id);
-  }, [plots, currentMode, selectedId]);
-
-  const handleModeChange = (mode: PlotMode) => {
-    setCurrentMode(mode);
-    const visiblePlots = getPlotsForMode(plots, mode);
-    if (selectedId && !visiblePlots.some((plot) => plot.word_id === selectedId)) {
-      setSelectedId(visiblePlots[0]?.word_id ?? null);
-    }
-  };
+    if (plots[0]) setSelectedId(plots[0].word_id);
+  }, [plots, selectedId]);
 
   const handlePlotChange = (updated: UserPlotRow, previousId?: string) => {
     if (previousId && previousId !== updated.word_id) {
@@ -126,24 +114,6 @@ function App() {
           >
             単語エディタ {isEditorOpen ? '▲' : '▼'}
           </button>
-          <button
-            onClick={() => handleModeChange('emotion')}
-            style={{
-              padding: '10px 20px', fontSize: '1rem', cursor: 'pointer',
-              backgroundColor: currentMode === 'emotion' ? '#4ea8de' : '#1f2833', color: '#fff', border: 'none', borderRadius: '4px'
-            }}
-          >
-            感情空間 (円環モデル)
-          </button>
-          <button
-            onClick={() => handleModeChange('state')}
-            style={{
-              padding: '10px 20px', fontSize: '1rem', cursor: 'pointer',
-              backgroundColor: currentMode === 'state' ? '#4abc96' : '#1f2833', color: '#fff', border: 'none', borderRadius: '4px'
-            }}
-          >
-            状態空間 (五感・善悪)
-          </button>
         </div>
       </header>
 
@@ -156,7 +126,6 @@ function App() {
 
         <SpaceCanvas
           plots={plots}
-          currentMode={currentMode}
           selectedId={selectedId}
           onWordSelect={handleWordSelect}
         />
@@ -164,7 +133,6 @@ function App() {
         {isEditorOpen && (
           <WordEditor
             plots={plots}
-            currentMode={currentMode}
             selectedId={selectedId}
             plotStatus={plotStatus}
             onSelect={handleWordSelect}
@@ -198,8 +166,8 @@ function App() {
         <div style={{ position: 'absolute', bottom: '20px', left: '20px', pointerEvents: 'none', backgroundColor: 'rgba(0,0,0,0.7)', padding: '15px', borderRadius: '5px', fontSize: '0.9rem' }}>
           <p style={{ margin: '0 0 5px 0' }}>🖱️ ドラッグ: 回転</p>
           <p style={{ margin: '0 0 5px 0' }}>📜 ホイール: ズーム</p>
-          <p style={{ margin: '0 0 5px 0' }}>データ: Supabase ({plots.filter((p) => p.mode === currentMode).length} 件)</p>
-          <p style={{ margin: 0 }}>現在の表示: <strong style={{ color: currentMode === 'emotion' ? '#4ea8de' : '#4abc96' }}>{currentMode === 'emotion' ? '感情空間' : '状態空間'}</strong></p>
+          <p style={{ margin: '0 0 5px 0' }}>データ: Supabase ({plots.length} 件)</p>
+          <p style={{ margin: 0 }}>表示: <strong style={{ color: '#4ea8de' }}>感情宇宙空間</strong></p>
         </div>
       </main>
     </div>
