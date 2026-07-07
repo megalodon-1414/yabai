@@ -34,6 +34,35 @@ function pureOrbitRadius(intensity: number, sphereRadius: number): number {
   return t * PURE_AREA_RATIO * sphereRadius;
 }
 
+export function getPureOrbitRingPoints(
+  params: EmotionPlotParams,
+  wordId: string,
+  segments = 72,
+): [number, number, number][] | null {
+  if (!params.isPure) return null;
+
+  const center = getEmotionCenter(params.primaryId);
+  const sphereRadius = getEmotionSphereRadius(params.primaryId);
+  const radius = pureOrbitRadius(params.intensity, sphereRadius);
+  if (radius < 0.002) return null;
+
+  const { u, v } = orbitBasis(params.intensity, wordId);
+  const points: [number, number, number][] = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    points.push([
+      center.x + radius * (cos * u[0] + sin * v[0]),
+      center.y + radius * (cos * u[1] + sin * v[1]),
+      center.z + radius * (cos * u[2] + sin * v[2]),
+    ]);
+  }
+
+  return points;
+}
+
 export function getEmotionPlotPosition(
   params: EmotionPlotParams,
   wordId: string,

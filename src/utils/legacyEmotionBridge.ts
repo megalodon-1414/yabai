@@ -3,6 +3,7 @@ import { getBasicEmotion, getEmotionById, isBasicEmotionId } from '../data/emoti
 import type { EmotionWord } from '../types/word';
 import type { UserPlotRow } from '../types/userPlot';
 import { findNearestBasicEmotionByAngle, findNearestEmotionByAngle } from './emotionSpaceLayout';
+import { blendHex, pureColorByIntensity } from './emotionColor';
 
 export interface EmotionPlotParams {
   primaryId: EmotionId;
@@ -30,14 +31,25 @@ export function emotionWordToUserPlot(word: EmotionWord): UserPlotRow {
   };
 }
 
-export function emotionPlotColor(params: EmotionPlotParams): string {
-  if (isBasicEmotionId(params.primaryId)) {
-    return getBasicEmotion(params.primaryId).color;
+export function getPrimaryEmotionColor(id: EmotionId): string {
+  if (isBasicEmotionId(id)) {
+    return getBasicEmotion(id).color;
   }
-  const dyad = getEmotionById(params.primaryId);
+  const dyad = getEmotionById(id);
   if ('components' in dyad) {
-    const [a] = dyad.components;
-    return getBasicEmotion(a).color;
+    const [a, b] = dyad.components;
+    return blendHex(getBasicEmotion(a).color, getBasicEmotion(b).color, 0.5);
   }
   return '#ffffff';
+}
+
+export function emotionPlotColor(params: EmotionPlotParams): string {
+  const primary = getPrimaryEmotionColor(params.primaryId);
+
+  if (params.isPure) {
+    return pureColorByIntensity(primary, params.intensity);
+  }
+
+  const secondary = getBasicEmotion(params.secondaryId).color;
+  return blendHex(primary, secondary, params.intensity / 100);
 }

@@ -42,8 +42,6 @@ export function getAtmosphericAppearance(
 
 export interface PlotPointAppearance extends AtmosphericAppearance {
   emissiveIntensity: number;
-  glowOpacity: number;
-  glowScale: number;
 }
 
 /** 語彙プロット点用：遠方でも星のように光って見える */
@@ -61,14 +59,8 @@ export function getPlotPointAppearance(
     isSelected ? 2.2 : 1.75,
     fade,
   );
-  const glowOpacity = THREE.MathUtils.lerp(
-    isSelected ? 0.5 : 0.34,
-    isSelected ? 0.72 : 0.58,
-    fade,
-  );
-  const glowScale = THREE.MathUtils.lerp(1, 1.35, fade);
 
   target.copy(baseColor).lerp(FOG_COLOR, colorMix);
 
-  return { opacity, color: target, emissiveIntensity, glowOpacity, glowScale };
+  return { opacity, color: target, emissiveIntensity };
 }

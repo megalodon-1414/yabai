@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { getAllEmotionCenters, getEmotionSphereRadius } from '../utils/emotionSpaceLayout';
+import { getAllEmotionCenters, getEmotionSphereRadius, PURE_AREA_RATIO } from '../utils/emotionSpaceLayout';
 import { isBasicEmotionId } from '../data/emotions';
 
 const SPACE_FOG_COLOR = '#030508';
@@ -133,7 +133,7 @@ function EmotionSphere({ position, color, radius, isBasic }: EmotionSphereProps)
       </mesh>
       {isBasic && (
         <mesh ref={innerRef}>
-          <sphereGeometry args={[radius * 0.38, 16, 16]} />
+          <sphereGeometry args={[radius * PURE_AREA_RATIO, 16, 16]} />
           <meshBasicMaterial color={color} transparent opacity={baseStyle.innerOpacity} depthWrite={false} />
         </mesh>
       )}
