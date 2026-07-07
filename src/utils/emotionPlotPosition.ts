@@ -1,8 +1,8 @@
 import type { EmotionPlotParams } from './legacyEmotionBridge';
 import {
-  EMOTION_SPHERE_RADIUS,
   PURE_AREA_RATIO,
   getEmotionCenter,
+  getEmotionSphereRadius,
 } from './emotionSpaceLayout';
 
 function hashId(id: string): number {
@@ -29,9 +29,9 @@ function orbitBasis(intensity: number, wordId: string): { u: [number, number, nu
   return { u: [ux, uy, uz], v: [vx, vy, vz] };
 }
 
-function pureOrbitRadius(intensity: number): number {
+function pureOrbitRadius(intensity: number, sphereRadius: number): number {
   const t = 1 - intensity / 100;
-  return t * PURE_AREA_RATIO * EMOTION_SPHERE_RADIUS;
+  return t * PURE_AREA_RATIO * sphereRadius;
 }
 
 export function getEmotionPlotPosition(
@@ -40,9 +40,10 @@ export function getEmotionPlotPosition(
   time = 0,
 ): [number, number, number] {
   const center = getEmotionCenter(params.primaryId);
+  const sphereRadius = getEmotionSphereRadius(params.primaryId);
 
   if (params.isPure) {
-    const radius = pureOrbitRadius(params.intensity);
+    const radius = pureOrbitRadius(params.intensity, sphereRadius);
     const { u, v } = orbitBasis(params.intensity, wordId);
     const phase = hashId(wordId) * 0.001;
     const angle = time * 0.35 + phase;
@@ -60,8 +61,8 @@ export function getEmotionPlotPosition(
   const dz = secondaryCenter.z - center.z;
   const len = Math.hypot(dx, dy, dz) || 1;
 
-  const minDist = PURE_AREA_RATIO * EMOTION_SPHERE_RADIUS;
-  const maxDist = EMOTION_SPHERE_RADIUS * 0.88;
+  const minDist = PURE_AREA_RATIO * sphereRadius;
+  const maxDist = sphereRadius * 0.88;
   const dist = minDist + (params.intensity / 100) * (maxDist - minDist);
 
   return [

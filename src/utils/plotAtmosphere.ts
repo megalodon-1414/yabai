@@ -39,3 +39,36 @@ export function getAtmosphericAppearance(
 
   return { opacity, color: target };
 }
+
+export interface PlotPointAppearance extends AtmosphericAppearance {
+  emissiveIntensity: number;
+  glowOpacity: number;
+  glowScale: number;
+}
+
+/** 語彙プロット点用：遠方でも星のように光って見える */
+export function getPlotPointAppearance(
+  distance: number,
+  baseColor: THREE.Color,
+  isSelected: boolean,
+  target = new THREE.Color(),
+): PlotPointAppearance {
+  const fade = smoothstep(10, 26, distance);
+  const opacity = THREE.MathUtils.lerp(1, isSelected ? 1 : 0.88, fade);
+  const colorMix = fade * 0.08;
+  const emissiveIntensity = THREE.MathUtils.lerp(
+    isSelected ? 1.4 : 1.05,
+    isSelected ? 2.2 : 1.75,
+    fade,
+  );
+  const glowOpacity = THREE.MathUtils.lerp(
+    isSelected ? 0.5 : 0.34,
+    isSelected ? 0.72 : 0.58,
+    fade,
+  );
+  const glowScale = THREE.MathUtils.lerp(1, 1.35, fade);
+
+  target.copy(baseColor).lerp(FOG_COLOR, colorMix);
+
+  return { opacity, color: target, emissiveIntensity, glowOpacity, glowScale };
+}

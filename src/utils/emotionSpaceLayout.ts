@@ -1,16 +1,69 @@
 import type { BasicEmotionId, EmotionId } from '../data/emotions';
-import { BASIC_EMOTIONS, DYAD_EMOTIONS, getBasicEmotion } from '../data/emotions';
+import type { DyadEmotion } from '../data/emotions';
+import { BASIC_EMOTIONS, DYAD_EMOTIONS, getBasicEmotion, isBasicEmotionId } from '../data/emotions';
 
 export const RING_RADIUS = 6;
 /** 上段4感情（喜・恐・悲・怒）の Y、下段4感情（信・驚・嫌・期）の Y */
 export const Y_LAYER_OFFSET = 4.5;
 export const EMOTION_SPHERE_RADIUS = 1.15;
+export const DYAD_SPHERE_RADIUS = 0.72;
 export const PURE_AREA_RATIO = 0.38;
+
+export function getEmotionSphereRadius(id: EmotionId): number {
+  return isBasicEmotionId(id) ? EMOTION_SPHERE_RADIUS : DYAD_SPHERE_RADIUS;
+}
+
+/** 合成感情の距離タイプごとの水平リング半径（基本環より内側・外側に分散） */
+const DYAD_RING_RADIUS: Record<1 | 2 | 3, number> = {
+  1: RING_RADIUS * 1.06,
+  2: RING_RADIUS * 0.8,
+  3: RING_RADIUS * 0.44,
+};
 
 export interface Vec3 {
   x: number;
   y: number;
   z: number;
+}
+
+function bisectorAngleDegrees(angleA: number, angleB: number): number {
+  const radA = (angleA * Math.PI) / 180;
+  const radB = (angleB * Math.PI) / 180;
+  let x = Math.cos(radA) + Math.cos(radB);
+  let z = Math.sin(radA) + Math.sin(radB);
+
+  if (Math.hypot(x, z) < 0.15) {
+    x = Math.cos(radA + Math.PI / 2);
+    z = Math.sin(radA + Math.PI / 2);
+  }
+
+  return (Math.atan2(z, x) * 180) / Math.PI;
+}
+
+function computeDyadPosition(dyad: DyadEmotion, dyadIndex: number): Vec3 {
+  const [a, b] = dyad.components;
+  const emotionA = getBasicEmotion(a);
+  const emotionB = getBasicEmotion(b);
+  const posA = basicPositions.get(a)!;
+  const posB = basicPositions.get(b)!;
+
+  const bisector = bisectorAngleDegrees(emotionA.angle, emotionB.angle);
+  const rad = (bisector * Math.PI) / 180;
+  const radius = DYAD_RING_RADIUS[dyad.distance];
+
+  const sameLayer = emotionA.elevated === emotionB.elevated;
+  let y = (posA.y + posB.y) / 2;
+
+  if (!sameLayer) {
+    const stagger = ((dyadIndex % 3) - 1) * 1.4;
+    y += stagger;
+  }
+
+  return {
+    x: radius * Math.cos(rad),
+    y,
+    z: radius * Math.sin(rad),
+  };
 }
 
 const basicPositions = new Map<BasicEmotionId, Vec3>();
@@ -31,14 +84,8 @@ for (const emotion of BASIC_EMOTIONS) {
 }
 
 for (const dyad of DYAD_EMOTIONS) {
-  const [a, b] = dyad.components;
-  const posA = basicPositions.get(a)!;
-  const posB = basicPositions.get(b)!;
-  emotionPositions.set(dyad.id, {
-    x: (posA.x + posB.x) / 2,
-    y: (posA.y + posB.y) / 2,
-    z: (posA.z + posB.z) / 2,
-  });
+  const dyadIndex = Number(dyad.id.replace('dyad-', ''));
+  emotionPositions.set(dyad.id, computeDyadPosition(dyad, dyadIndex));
 }
 
 export function getEmotionCenter(id: EmotionId): Vec3 {
