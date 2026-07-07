@@ -1,6 +1,11 @@
 import type { UserPlotRow } from '../types/userPlot';
+import { emotionPlotColor, legacyRowToEmotionParams } from './legacyEmotionBridge';
+import { getEmotionPlotPosition } from './emotionPlotPosition';
 
 export function plotColorFromRow(row: UserPlotRow): string {
+  if (row.mode === 'emotion') {
+    return emotionPlotColor(legacyRowToEmotionParams(row));
+  }
   return `hsl(${row.hue}, ${row.saturation}%, ${row.brightness}%)`;
 }
 
@@ -10,6 +15,7 @@ function brightnessToHeight(brightness: number): number {
 
 const EMOTION_SATURATION_SCALE = 0.05;
 
+/** @deprecated 旧HSL空間用。emotionSpaceDots のみが参照 */
 export function emotionPositionFromParams(
   hue: number,
   saturation: number,
@@ -22,9 +28,10 @@ export function emotionPositionFromParams(
   return [x, y, z];
 }
 
-export function plotPositionFromRow(row: UserPlotRow): [number, number, number] {
+export function plotPositionFromRow(row: UserPlotRow, time = 0): [number, number, number] {
   if (row.mode === 'emotion') {
-    return emotionPositionFromParams(row.hue, row.saturation, row.brightness);
+    const params = legacyRowToEmotionParams(row);
+    return getEmotionPlotPosition(params, row.word_id, time);
   }
 
   const perception = (row.hue / 360) * 20 - 10;
@@ -33,7 +40,7 @@ export function plotPositionFromRow(row: UserPlotRow): [number, number, number] 
   return [perception * 0.5, y, quality * 0.5];
 }
 
-const NEARBY_PLOT_RADIUS = 1.2;
+const NEARBY_PLOT_RADIUS = 2.5;
 
 export function getNearbyPlotIds(
   plots: UserPlotRow[],
@@ -60,4 +67,9 @@ export function getNearbyPlotIds(
   }
 
   return nearby;
+}
+
+export function isPureEmotionPlot(row: UserPlotRow): boolean {
+  if (row.mode !== 'emotion') return false;
+  return legacyRowToEmotionParams(row).isPure;
 }

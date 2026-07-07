@@ -1,0 +1,114 @@
+import type { BasicEmotionId, EmotionId } from '../data/emotions';
+import { BASIC_EMOTIONS, DYAD_EMOTIONS, getBasicEmotion } from '../data/emotions';
+
+export const RING_RADIUS = 6;
+/** 上段4感情（喜・恐・悲・怒）の Y、下段4感情（信・驚・嫌・期）の Y */
+export const Y_LAYER_OFFSET = 4.5;
+export const EMOTION_SPHERE_RADIUS = 1.15;
+export const PURE_AREA_RATIO = 0.38;
+
+export interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+const basicPositions = new Map<BasicEmotionId, Vec3>();
+
+for (const emotion of BASIC_EMOTIONS) {
+  const rad = (emotion.angle * Math.PI) / 180;
+  basicPositions.set(emotion.id, {
+    x: RING_RADIUS * Math.cos(rad),
+    y: emotion.elevated ? Y_LAYER_OFFSET : -Y_LAYER_OFFSET,
+    z: RING_RADIUS * Math.sin(rad),
+  });
+}
+
+const emotionPositions = new Map<EmotionId, Vec3>();
+
+for (const emotion of BASIC_EMOTIONS) {
+  emotionPositions.set(emotion.id, basicPositions.get(emotion.id)!);
+}
+
+for (const dyad of DYAD_EMOTIONS) {
+  const [a, b] = dyad.components;
+  const posA = basicPositions.get(a)!;
+  const posB = basicPositions.get(b)!;
+  emotionPositions.set(dyad.id, {
+    x: (posA.x + posB.x) / 2,
+    y: (posA.y + posB.y) / 2,
+    z: (posA.z + posB.z) / 2,
+  });
+}
+
+export function getEmotionCenter(id: EmotionId): Vec3 {
+  return emotionPositions.get(id)!;
+}
+
+export function getAllEmotionCenters(): Array<{ id: EmotionId; position: Vec3; color: string; label: string }> {
+  return [
+    ...BASIC_EMOTIONS.map((emotion) => ({
+      id: emotion.id as EmotionId,
+      position: emotionPositions.get(emotion.id)!,
+      color: emotion.color,
+      label: emotion.label,
+    })),
+    ...DYAD_EMOTIONS.map((dyad) => {
+      const [a, b] = dyad.components;
+      return {
+        id: dyad.id,
+        position: emotionPositions.get(dyad.id)!,
+        color: blendHex(getBasicEmotion(a).color, getBasicEmotion(b).color),
+        label: dyad.label,
+      };
+    }),
+  ];
+}
+
+function blendHex(a: string, b: string): string {
+  const parse = (hex: string) => {
+    const value = hex.replace('#', '');
+    return [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16));
+  };
+  const [ar, ag, ab] = parse(a);
+  const [br, bg, bb] = parse(b);
+  const toHex = (n: number) => Math.round(n).toString(16).padStart(2, '0');
+  return `#${toHex((ar + br) / 2)}${toHex((ag + bg) / 2)}${toHex((ab + bb) / 2)}`;
+}
+
+export function findNearestEmotionByAngle(angle: number): EmotionId {
+  const normalized = ((angle % 360) + 360) % 360;
+  let nearest: EmotionId = 'joy';
+  let minDist = Infinity;
+
+  for (const [id, pos] of emotionPositions) {
+    const emotionAngle = (Math.atan2(pos.z, pos.x) * 180) / Math.PI;
+    const normEmotion = ((emotionAngle % 360) + 360) % 360;
+    let diff = Math.abs(normEmotion - normalized);
+    if (diff > 180) diff = 360 - diff;
+    const dist3d = Math.abs(pos.y) * 0.02 + diff;
+    if (dist3d < minDist) {
+      minDist = dist3d;
+      nearest = id;
+    }
+  }
+
+  return nearest;
+}
+
+export function findNearestBasicEmotionByAngle(angle: number): BasicEmotionId {
+  const normalized = ((angle % 360) + 360) % 360;
+  let nearest: BasicEmotionId = 'joy';
+  let minDist = Infinity;
+
+  for (const emotion of BASIC_EMOTIONS) {
+    let diff = Math.abs(emotion.angle - normalized);
+    if (diff > 180) diff = 360 - diff;
+    if (diff < minDist) {
+      minDist = diff;
+      nearest = emotion.id;
+    }
+  }
+
+  return nearest;
+}

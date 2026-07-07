@@ -4,7 +4,7 @@ import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { UserPlotRow } from '../types/userPlot';
 import { getAtmosphericAppearance } from '../utils/plotAtmosphere';
-import { plotColorFromRow, plotPositionFromRow } from '../utils/plotFromUserPlot';
+import { isPureEmotionPlot, plotColorFromRow, plotPositionFromRow } from '../utils/plotFromUserPlot';
 import { SELECTED_PLOT_SCALE } from '../utils/plotSelectionStyle';
 import { getPlotLabelStyle, getPlotLabelTypography } from '../utils/plotLabelStyle';
 
@@ -21,12 +21,14 @@ interface WordPlotProps {
 
 export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSelect }: WordPlotProps) {
   const { size, camera } = useThree();
+  const groupRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Mesh>(null);
   const labelRef = useRef<HTMLDivElement>(null);
   const worldPosition = useRef(new THREE.Vector3());
   const fadedColor = useRef(new THREE.Color());
   const visibility = useRef(isNearbyVisible ? 1 : 0);
   const isVisible = plot.mode === currentMode;
+  const isOrbiting = plot.mode === 'emotion' && isPureEmotionPlot(plot);
 
   const labelStyle = useMemo(
     () => getPlotLabelStyle(size.width, size.height, isSelected),
@@ -36,7 +38,7 @@ export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSel
     () => getPlotLabelTypography(plot, isSelected),
     [plot, isSelected],
   );
-  const position = useMemo(() => plotPositionFromRow(plot), [plot]);
+  const staticPosition = useMemo(() => plotPositionFromRow(plot), [plot]);
   const color = useMemo(() => plotColorFromRow(plot), [plot]);
   const baseColor = useMemo(() => {
     const parsed = new THREE.Color();
@@ -44,11 +46,17 @@ export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSel
     return parsed;
   }, [color]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!isVisible) return;
 
+    const group = groupRef.current;
     const mesh = meshRef.current;
-    if (!mesh) return;
+    if (!group || !mesh) return;
+
+    const [x, y, z] = isOrbiting
+      ? plotPositionFromRow(plot, state.clock.elapsedTime)
+      : staticPosition;
+    group.position.set(x, y, z);
 
     const targetVisibility = isNearbyVisible ? 1 : 0;
     const t = 1 - Math.exp(-VISIBILITY_LERP_SPEED * delta);
@@ -95,7 +103,7 @@ export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSel
   };
 
   return (
-    <group position={position}>
+    <group ref={groupRef} position={staticPosition}>
       <mesh
         ref={meshRef}
         scale={isSelected ? SELECTED_PLOT_SCALE : 1}
@@ -112,7 +120,7 @@ export function WordPlot({ plot, currentMode, isSelected, isNearbyVisible, onSel
           document.body.style.cursor = 'auto';
         }}
       >
-        <sphereGeometry args={[0.06, 16, 16]} />
+        <sphereGeometry args={[0.09, 16, 16]} />
         <meshBasicMaterial color={color} transparent />
       </mesh>
 

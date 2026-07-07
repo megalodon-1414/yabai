@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const FOG_COLOR = new THREE.Color('#0b0c10');
+const FOG_COLOR = new THREE.Color('#030508');
 export const ATMOSPHERE_NEAR_DISTANCE = 4;
 export const ATMOSPHERE_FAR_DISTANCE = 18;
 export const ATMOSPHERE_MIN_OPACITY = 0.22;
