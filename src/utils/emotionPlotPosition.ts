@@ -1,9 +1,11 @@
-import type { EmotionPlotParams } from './legacyEmotionBridge';
+import type { EmotionPlotParams } from './emotionPlotBridge';
 import {
   PURE_AREA_RATIO,
   getEmotionCenter,
   getEmotionSphereRadius,
 } from './emotionSpaceLayout';
+
+const ORBIT_PLANE_VARIATION_RAD = Math.PI / 4;
 
 function hashId(id: string): number {
   let hash = 0;
@@ -16,7 +18,8 @@ function hashId(id: string): number {
 function orbitBasis(intensity: number, wordId: string): { u: [number, number, number]; v: [number, number, number] } {
   const seed = hashId(`${wordId}:${Math.round(intensity)}`);
   const theta = (seed % 360) * (Math.PI / 180);
-  const phi = ((seed >> 4) % 360) * (Math.PI / 180);
+  const planeRandom = ((seed >> 4) % 1000) / 999;
+  const phi = (planeRandom - 0.5) * ORBIT_PLANE_VARIATION_RAD;
 
   const ux = Math.cos(theta);
   const uy = Math.sin(theta) * Math.cos(phi);

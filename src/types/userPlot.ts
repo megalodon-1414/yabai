@@ -1,10 +1,10 @@
-import type { PrimaryEmotion } from '../emotionSpace/emotions';
-
-export type EmotionVector = Record<PrimaryEmotion, number>;
+import type { BasicEmotionId, EmotionId } from '../data/emotions';
 
 export interface UserPlotRow {
   word_id: string;
-  emotions: EmotionVector;
+  primaryId: EmotionId;
+  secondaryId: BasicEmotionId;
+  intensity: number;
 }
 
 /** Supabase 旧形式からの移行用 */
@@ -14,4 +14,5 @@ export interface LegacyUserPlotRow {
   hue?: number;
   brightness?: number;
   saturation?: number;
+  emotions?: Record<string, number>;
 }

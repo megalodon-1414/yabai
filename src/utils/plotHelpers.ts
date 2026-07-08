@@ -1,11 +1,8 @@
 import type { UserPlotRow } from '../types/userPlot';
-import { createDefaultEmotionVector } from '../emotionSpace/migrate';
+import { createDefaultPlotRow } from './emotionPlotBridge';
 
 export function createDefaultPlot(): UserPlotRow {
-  return {
-    word_id: `w-${Date.now()}`,
-    emotions: createDefaultEmotionVector(),
-  };
+  return createDefaultPlotRow();
 }
 
 export function updatePlot(plots: UserPlotRow[], updated: UserPlotRow): UserPlotRow[] {

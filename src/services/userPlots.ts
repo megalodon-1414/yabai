@@ -1,11 +1,14 @@
 import { supabase } from '../lib/supabase';
 import type { UserPlotRow } from '../types/userPlot';
-import { clampEmotionVector, parseUserPlotRow } from '../emotionSpace/migrate';
+import { normalizeUserPlotRow, parseUserPlotRow } from '../utils/emotionPlotBridge';
 
 function normalizeRow(row: UserPlotRow) {
+  const normalized = normalizeUserPlotRow(row);
   return {
-    word_id: row.word_id,
-    emotions: clampEmotionVector(row.emotions),
+    word_id: normalized.word_id,
+    primary_id: normalized.primaryId,
+    secondary_id: normalized.secondaryId,
+    intensity: normalized.intensity,
   };
 }
 

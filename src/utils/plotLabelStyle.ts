@@ -1,6 +1,6 @@
 import { SELECTED_PLOT_SCALE } from './plotSelectionStyle';
 import type { UserPlotRow } from '../types/userPlot';
-import { getEmotionDominance, getPlotSpread } from '../emotionSpace/plotColor';
+import { isPurePlot } from '../utils/emotionPlotBridge';
 
 const MIN_FONT_SIZE = 4;
 const MAX_FONT_SIZE = 9;
@@ -26,14 +26,15 @@ export function getPlotLabelStyle(
   viewportWidth: number,
   viewportHeight: number,
   isSelected: boolean,
+  selectedScale = SELECTED_PLOT_SCALE,
 ): PlotLabelStyle {
   const minDim = Math.min(viewportWidth, viewportHeight);
   const baseFontSize = Math.round(
     Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, minDim * FONT_SIZE_RATIO)),
   );
-  const fontSize = isSelected ? Math.round(baseFontSize * SELECTED_PLOT_SCALE) : baseFontSize;
+  const fontSize = isSelected ? Math.round(baseFontSize * selectedScale) : baseFontSize;
   const sphereGap = Math.round(baseFontSize * 0.4 + 4);
-  const screenOffsetY = isSelected ? Math.round(sphereGap * SELECTED_PLOT_SCALE) : sphereGap;
+  const screenOffsetY = isSelected ? Math.round(sphereGap * selectedScale) : sphereGap;
 
   return {
     fontSize: `${fontSize}px`,
@@ -43,13 +44,18 @@ export function getPlotLabelStyle(
 }
 
 export function getPlotLabelTypography(plot: UserPlotRow, isSelected: boolean): PlotLabelTypography {
-  const dominance = getEmotionDominance(plot.emotions);
-  const spread = getPlotSpread(plot.emotions);
+  const pure = isPurePlot(plot);
+  const intensityNorm = plot.intensity / 100;
   const selectedWeightBoost = isSelected ? 80 : 0;
   const fontWeight = Math.round(
-    Math.min(FONT_WEIGHT_MAX, FONT_WEIGHT_MIN + dominance * (FONT_WEIGHT_MAX - FONT_WEIGHT_MIN) + selectedWeightBoost),
+    Math.min(
+      FONT_WEIGHT_MAX,
+      FONT_WEIGHT_MIN + intensityNorm * (FONT_WEIGHT_MAX - FONT_WEIGHT_MIN) + selectedWeightBoost,
+    ),
   );
-  const fontWidth = Math.round(FONT_WIDTH_MIN + spread * (FONT_WIDTH_MAX - FONT_WIDTH_MIN));
+  const fontWidth = Math.round(
+    pure ? FONT_WIDTH_MIN + 20 : FONT_WIDTH_MIN + intensityNorm * (FONT_WIDTH_MAX - FONT_WIDTH_MIN),
+  );
 
   return {
     fontWeight,

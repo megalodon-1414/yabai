@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { PlotStatus } from '../hooks/usePlotSubmit';
 import type { UserPlotRow } from '../types/userPlot';
-import { EmotionRadarChart } from './EmotionRadarChart';
+import { EmotionPlotEditor } from './EmotionPlotEditor';
 import { createDefaultPlot } from '../utils/plotHelpers';
 
 interface WordEditorProps {
@@ -103,7 +103,7 @@ export function WordEditor({
       <div style={{ padding: '14px 16px', borderBottom: '1px solid #1f2833' }}>
         <h2 style={{ margin: 0, fontSize: '1rem', color: accentColor }}>単語エディタ</h2>
         <p style={{ margin: '6px 0 0', fontSize: '0.8rem', color: '#9ca3af' }}>
-          感情宇宙空間（8感情レーダー / 編集後はプロットで反映）
+          主感情・副感情・強度（編集後はプロットで反映）
         </p>
         {statusLabel && (
           <p
@@ -190,9 +190,9 @@ export function WordEditor({
             }
           />
 
-          <EmotionRadarChart
-            values={selectedPlot.emotions}
-            onChange={(emotions) => onChange({ ...selectedPlot, emotions })}
+          <EmotionPlotEditor
+            plot={selectedPlot}
+            onChange={(updated) => onChange(updated)}
           />
 
           <button
