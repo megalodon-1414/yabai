@@ -1,6 +1,7 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { getBasicEmotion } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import {
   createMixedPlotOrbitOverrides,
@@ -11,7 +12,7 @@ import {
   type PlotOrbitOverride,
 } from '../utils/plotFromUserPlot';
 import { applySelectionViewOffset, clearSelectionViewOffset } from '../utils/cameraFocus';
-import { getPrimaryEmotionColor } from '../utils/emotionPlotBridge';
+import { getPrimaryEmotionColor, rowToEmotionParams } from '../utils/emotionPlotBridge';
 import {
   EXPLORATION_CAMERA_DISTANCE,
   EXPLORATION_NEARBY_RADIUS,
@@ -22,6 +23,7 @@ import { EmotionSpaceAreas } from './EmotionSpaceAreas';
 import { ExplorationDistantPlotCloud } from './ExplorationDistantPlotCloud';
 import { GravityAttractionParticles } from './GravityAttractionParticles';
 import { OrbitTrail } from './OrbitTrail';
+import { WarpGate } from './WarpGate';
 import { WordPlot } from './WordPlot';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 3, 18];
@@ -37,9 +39,18 @@ const ROTATION_SPEED = 0.006;
 const WHEEL_ZOOM_SPEED = 0.0015;
 const EXPLORATION_ORBIT_SCREEN_ANCHOR = { x: 0.24, y: 0.5 };
 const EXPLORATION_ORBIT_CAMERA_DISTANCE = 1.3;
+const EXPLORATION_MIXED_ORBIT_CAMERA_DISTANCE = 0.68;
 const SELECTED_ORBIT_TIME_SCALE = 0.18;
 
 type FocusPhase = 'idle' | 'movingTarget' | 'movingView' | 'adjustingZoom' | 'focused';
+
+interface WarpGateEntry {
+  key: string;
+  plot: UserPlotRow;
+  orbitOverride?: PlotOrbitOverride;
+  sourceOverride?: [number, number, number];
+  active: boolean;
+}
 
 interface SpaceCanvasProps {
   plots: UserPlotRow[];
@@ -47,6 +58,7 @@ interface SpaceCanvasProps {
   explorationMode?: boolean;
   onSelectedScreenPosition?: (point: { x: number; y: number; visible: boolean } | null) => void;
   onHoveredWordChange?: (wordId: string | null) => void;
+  onHoveredWarpGateChange?: (label: string | null) => void;
   onHoveredScreenPosition?: (point: { x: number; y: number; visible: boolean } | null) => void;
   onWordSelect: (id: string) => void;
 }
@@ -361,6 +373,7 @@ export function SpaceCanvas({
   explorationMode = false,
   onSelectedScreenPosition,
   onHoveredWordChange,
+  onHoveredWarpGateChange,
   onHoveredScreenPosition,
   onWordSelect,
 }: SpaceCanvasProps) {
@@ -450,6 +463,126 @@ export function SpaceCanvas({
 
   const isExplorationFocused = explorationMode && !isDefaultView && selectedId !== null;
 
+  const warpGatePlots = useMemo(() => {
+    if (!explorationMode || isDefaultView) {
+      return [];
+    }
+
+    const strongestByPair = new Map<string, number>();
+    for (const plot of plots) {
+      const params = rowToEmotionParams(plot);
+      if (params.isPure) {
+        continue;
+      }
+
+      const key = `${params.primaryId}:${params.secondaryId}`;
+      strongestByPair.set(key, Math.max(strongestByPair.get(key) ?? -Infinity, params.intensity));
+    }
+
+    return plots.filter((plot) => {
+      const params = rowToEmotionParams(plot);
+      if (params.isPure) {
+        return false;
+      }
+
+      const key = `${params.primaryId}:${params.secondaryId}`;
+      const strongestIntensity = strongestByPair.get(key) ?? -Infinity;
+      const hasWarpTarget = plots.some(
+        (targetPlot) => isPureEmotionPlot(targetPlot) && targetPlot.primaryId === params.secondaryId,
+      );
+
+      return hasWarpTarget && params.intensity >= strongestIntensity;
+    });
+  }, [explorationMode, isDefaultView, plots]);
+
+  const selectedWarpGatePlot = useMemo(() => {
+    if (!selectedPlot) {
+      return null;
+    }
+
+    if (selectedMixedOrbit) {
+      return warpGatePlots.find((plot) => {
+        const orbitOverride = mixedOrbitOverrides.get(plot.word_id);
+        return orbitOverride?.groupKey === selectedMixedOrbit.groupKey;
+      }) ?? null;
+    }
+
+    return warpGatePlots.find((plot) => plot.word_id === selectedPlot.word_id) ?? null;
+  }, [mixedOrbitOverrides, selectedMixedOrbit, selectedPlot, warpGatePlots]);
+
+  const warpGateTargets = useMemo(() => {
+    if (!selectedWarpGatePlot) {
+      return [];
+    }
+
+    const params = rowToEmotionParams(selectedWarpGatePlot);
+    return plots.filter((plot) => isPureEmotionPlot(plot) && plot.primaryId === params.secondaryId);
+  }, [plots, selectedWarpGatePlot]);
+
+  const visibleWarpGateEntries = useMemo((): WarpGateEntry[] => {
+    const entries: WarpGateEntry[] = [];
+    const seenGroups = new Set<string>();
+
+    for (const plot of warpGatePlots) {
+      const orbitOverride = mixedOrbitOverrides.get(plot.word_id);
+      const active =
+        orbitOverride && selectedMixedOrbit
+          ? orbitOverride.groupKey === selectedMixedOrbit.groupKey
+          : plot.word_id === selectedId;
+
+      if (orbitOverride) {
+        if (seenGroups.has(orbitOverride.groupKey)) {
+          continue;
+        }
+        seenGroups.add(orbitOverride.groupKey);
+
+        const groupIsNearby = plots.some((candidate) => {
+          const candidateOverride = mixedOrbitOverrides.get(candidate.word_id);
+          return candidateOverride?.groupKey === orbitOverride.groupKey && nearbyPlotIds?.has(candidate.word_id);
+        });
+
+        if (!active && !groupIsNearby) {
+          continue;
+        }
+
+        entries.push({
+          key: `warp-gate-group-${orbitOverride.groupKey}`,
+          plot,
+          orbitOverride,
+          sourceOverride: orbitOverride.center,
+          active: Boolean(active),
+        });
+        continue;
+      }
+
+      if (!active && (!nearbyPlotIds || !nearbyPlotIds.has(plot.word_id))) {
+        continue;
+      }
+
+      entries.push({
+        key: `warp-gate-${plot.word_id}`,
+        plot,
+        active: Boolean(active),
+      });
+    }
+
+    return entries;
+  }, [mixedOrbitOverrides, nearbyPlotIds, selectedId, selectedMixedOrbit, warpGatePlots]);
+
+  const handleWarpGateSelect = useCallback(() => {
+    if (warpGateTargets.length === 0) {
+      return;
+    }
+
+    const target = warpGateTargets[Math.floor(Math.random() * warpGateTargets.length)];
+    if (!target) {
+      return;
+    }
+
+    setIsDefaultView(false);
+    onWordSelect(target.word_id);
+  }, [onWordSelect, warpGateTargets]);
+
   const getOrbitTimeScale = (plot: UserPlotRow | null): number =>
     isSelectedOrbitingPlot && selectedPlot && plot && isPureEmotionPlot(plot) && plot.primaryId === selectedPlot.primaryId
       ? SELECTED_ORBIT_TIME_SCALE
@@ -513,7 +646,13 @@ export function SpaceCanvas({
           focusOnSelection={isExplorationFocused || (!explorationMode && !isDefaultView && selectedId !== null)}
           explorationFocus={isExplorationFocused}
           explorationAnchor={isSelectedOrbitingPlot ? EXPLORATION_ORBIT_SCREEN_ANCHOR : EXPLORATION_SCREEN_ANCHOR}
-          explorationDistance={isSelectedOrbitingPlot ? EXPLORATION_ORBIT_CAMERA_DISTANCE : EXPLORATION_CAMERA_DISTANCE}
+          explorationDistance={
+            isSelectedOrbitingPlot
+              ? EXPLORATION_ORBIT_CAMERA_DISTANCE
+              : selectedMixedOrbit
+                ? EXPLORATION_MIXED_ORBIT_CAMERA_DISTANCE
+                : EXPLORATION_CAMERA_DISTANCE
+          }
         />
         <SelectedScreenPointTracker
           plot={selectedPlot}
@@ -548,6 +687,20 @@ export function SpaceCanvas({
               orbitOverride={mixedOrbitOverrides.get(selectedPlot.word_id)}
             />
           )}
+          {visibleWarpGateEntries.map((entry) => (
+            <WarpGate
+              key={entry.key}
+              plot={entry.plot}
+              orbitOverride={entry.orbitOverride}
+              sourceOverride={entry.sourceOverride}
+              color={getPrimaryEmotionColor(entry.plot.secondaryId)}
+              hoverLabel={`to${getBasicEmotion(entry.plot.secondaryId).label}空間`}
+              active={entry.active && warpGateTargets.length > 0}
+              onWarp={handleWarpGateSelect}
+              onHoverLabelChange={onHoveredWarpGateChange}
+              onHoverScreenPosition={onHoveredScreenPosition}
+            />
+          ))}
           {sameEmotionOrbitPlots.map((plot) => (
             <OrbitTrail
               key={`same-emotion-orbit-${plot.word_id}`}
