@@ -1,16 +1,46 @@
 import type { UserPlotRow } from '../types/userPlot';
-import { emotionColorFromVector } from '../emotionSpace/plotColor';
-import { emotionPositionFromVector } from '../emotionSpace/plotPosition';
+import { emotionPlotColor, legacyRowToEmotionParams } from './legacyEmotionBridge';
+import { getEmotionPlotPosition } from './emotionPlotPosition';
 
 export function plotColorFromRow(row: UserPlotRow): string {
-  return emotionColorFromVector(row.emotions);
+  if (row.mode === 'emotion') {
+    return emotionPlotColor(legacyRowToEmotionParams(row));
+  }
+  return `hsl(${row.hue}, ${row.saturation}%, ${row.brightness}%)`;
 }
 
-export function plotPositionFromRow(row: UserPlotRow): [number, number, number] {
-  return emotionPositionFromVector(row.emotions);
+function brightnessToHeight(brightness: number): number {
+  return ((brightness - 25) / 55) * 5;
 }
 
-const NEARBY_PLOT_RADIUS = 0.75;
+const EMOTION_SATURATION_SCALE = 0.05;
+
+/** @deprecated 旧HSL空間用。emotionSpaceDots のみが参照 */
+export function emotionPositionFromParams(
+  hue: number,
+  saturation: number,
+  brightness: number,
+): [number, number, number] {
+  const rad = (hue * Math.PI) / 180;
+  const y = brightnessToHeight(brightness);
+  const x = saturation * Math.cos(rad) * EMOTION_SATURATION_SCALE;
+  const z = saturation * Math.sin(rad) * EMOTION_SATURATION_SCALE;
+  return [x, y, z];
+}
+
+export function plotPositionFromRow(row: UserPlotRow, time = 0): [number, number, number] {
+  if (row.mode === 'emotion') {
+    const params = legacyRowToEmotionParams(row);
+    return getEmotionPlotPosition(params, row.word_id, time);
+  }
+
+  const perception = (row.hue / 360) * 20 - 10;
+  const quality = (row.saturation / 100) * 10;
+  const y = brightnessToHeight(row.brightness);
+  return [perception * 0.5, y, quality * 0.5];
+}
+
+const NEARBY_PLOT_RADIUS = 2.5;
 
 export function getNearbyPlotIds(
   plots: UserPlotRow[],
@@ -34,4 +64,9 @@ export function getNearbyPlotIds(
   }
 
   return nearby;
+}
+
+export function isPureEmotionPlot(row: UserPlotRow): boolean {
+  if (row.mode !== 'emotion') return false;
+  return legacyRowToEmotionParams(row).isPure;
 }

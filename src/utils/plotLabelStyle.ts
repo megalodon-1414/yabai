@@ -2,10 +2,10 @@ import { SELECTED_PLOT_SCALE } from './plotSelectionStyle';
 import type { UserPlotRow } from '../types/userPlot';
 import { getEmotionDominance, getPlotSpread } from '../emotionSpace/plotColor';
 
-const MIN_FONT_SIZE = 6;
-const MAX_FONT_SIZE = 12;
-const FONT_SIZE_RATIO = 0.024;
-const DISTANCE_FACTOR_RATIO = 0.56;
+const MIN_FONT_SIZE = 4;
+const MAX_FONT_SIZE = 9;
+const FONT_SIZE_RATIO = 0.017;
+const DISTANCE_FACTOR_RATIO = 0.5;
 const FONT_WEIGHT_MIN = 200;
 const FONT_WEIGHT_MAX = 900;
 const FONT_WIDTH_MIN = 50;
@@ -32,7 +32,7 @@ export function getPlotLabelStyle(
     Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, minDim * FONT_SIZE_RATIO)),
   );
   const fontSize = isSelected ? Math.round(baseFontSize * SELECTED_PLOT_SCALE) : baseFontSize;
-  const sphereGap = Math.round(baseFontSize * 0.45 + 5);
+  const sphereGap = Math.round(baseFontSize * 0.4 + 4);
   const screenOffsetY = isSelected ? Math.round(sphereGap * SELECTED_PLOT_SCALE) : sphereGap;
 
   return {

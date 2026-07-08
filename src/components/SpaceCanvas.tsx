@@ -6,14 +6,13 @@ import * as THREE from 'three';
 import type { UserPlotRow } from '../types/userPlot';
 import { getNearbyPlotIds, plotPositionFromRow } from '../utils/plotFromUserPlot';
 import { applySelectionViewOffset, clearSelectionViewOffset } from '../utils/cameraFocus';
-import { SpaceDots3D } from './SpaceDots3D';
-import { EmotionGalaxyCenters } from './EmotionGalaxyCenters';
+import { EmotionSpaceAreas } from './EmotionSpaceAreas';
 import { WordPlot } from './WordPlot';
 
-const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 5, 8];
+const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 3, 18];
 const DEFAULT_CAMERA_TARGET: [number, number, number] = [0, 0, 0];
-const DEFAULT_CAMERA_FOV = 60;
-const SELECTION_CAMERA_DISTANCE = 2;
+const DEFAULT_CAMERA_FOV = 55;
+const SELECTION_CAMERA_DISTANCE = 5;
 const DEFAULT_CAMERA_DISTANCE = new THREE.Vector3(...DEFAULT_CAMERA_POSITION).distanceTo(
   new THREE.Vector3(...DEFAULT_CAMERA_TARGET),
 );
@@ -243,7 +242,7 @@ export function SpaceCanvas({ plots, selectedId, onWordSelect }: SpaceCanvasProp
   }, [selectedId]);
 
   return (
-    <div style={{ width: '100%', height: '100%', backgroundColor: '#0b0c10', position: 'relative' }}>
+    <div style={{ width: '100%', height: '100%', backgroundColor: '#030508', position: 'relative' }}>
       <button
         type="button"
         onClick={() => {
@@ -271,9 +270,9 @@ export function SpaceCanvas({ plots, selectedId, onWordSelect }: SpaceCanvasProp
         camera={{ position: DEFAULT_CAMERA_POSITION, fov: DEFAULT_CAMERA_FOV }}
         style={{ width: '100%', height: '100%' }}
       >
-        <color attach="background" args={['#0b0c10']} />
-        <ambientLight intensity={1.5} />
-        <pointLight position={[10, 10, 10]} />
+        <color attach="background" args={['#030508']} />
+        <ambientLight intensity={0.4} />
+        <pointLight position={[10, 10, 10]} intensity={0.8} />
 
         <CameraControls
           resetCount={resetCount}
@@ -296,7 +295,7 @@ export function SpaceCanvas({ plots, selectedId, onWordSelect }: SpaceCanvasProp
           ))}
         </Suspense>
 
-        <SpaceDots3D />
+        <EmotionSpaceAreas currentMode={currentMode} />
       </Canvas>
     </div>
   );

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const FOG_COLOR = new THREE.Color('#0b0c10');
+const FOG_COLOR = new THREE.Color('#030508');
 export const ATMOSPHERE_NEAR_DISTANCE = 4;
 export const ATMOSPHERE_FAR_DISTANCE = 18;
 export const ATMOSPHERE_MIN_OPACITY = 0.22;
@@ -38,4 +38,29 @@ export function getAtmosphericAppearance(
   target.copy(baseColor).lerp(FOG_COLOR, colorMix);
 
   return { opacity, color: target };
+}
+
+export interface PlotPointAppearance extends AtmosphericAppearance {
+  emissiveIntensity: number;
+}
+
+/** 語彙プロット点用：遠方でも星のように光って見える */
+export function getPlotPointAppearance(
+  distance: number,
+  baseColor: THREE.Color,
+  isSelected: boolean,
+  target = new THREE.Color(),
+): PlotPointAppearance {
+  const fade = smoothstep(10, 26, distance);
+  const opacity = THREE.MathUtils.lerp(1, isSelected ? 1 : 0.88, fade);
+  const colorMix = fade * 0.08;
+  const emissiveIntensity = THREE.MathUtils.lerp(
+    isSelected ? 1.4 : 1.05,
+    isSelected ? 2.2 : 1.75,
+    fade,
+  );
+
+  target.copy(baseColor).lerp(FOG_COLOR, colorMix);
+
+  return { opacity, color: target, emissiveIntensity };
 }

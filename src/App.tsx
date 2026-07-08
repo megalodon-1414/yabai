@@ -9,6 +9,7 @@ import {
   replacePlotId,
   updatePlot,
 } from './utils/plotHelpers';
+import { mergeWithSeedPlots } from './utils/seedPlots';
 
 function App() {
   const [plots, setPlots] = useState<UserPlotRow[]>([]);
@@ -23,7 +24,7 @@ function App() {
     setLoadError(null);
     try {
       const data = await fetchUserPlots();
-      setPlots(data);
+      setPlots(mergeWithSeedPlots(data));
       setSelectedId((prev) => {
         if (prev && data.some((plot) => plot.word_id === prev)) return prev;
         return null;
@@ -166,8 +167,8 @@ function App() {
         <div style={{ position: 'absolute', bottom: '20px', left: '20px', pointerEvents: 'none', backgroundColor: 'rgba(0,0,0,0.7)', padding: '15px', borderRadius: '5px', fontSize: '0.9rem' }}>
           <p style={{ margin: '0 0 5px 0' }}>🖱️ ドラッグ: 回転</p>
           <p style={{ margin: '0 0 5px 0' }}>📜 ホイール: ズーム</p>
-          <p style={{ margin: '0 0 5px 0' }}>データ: Supabase ({plots.length} 件)</p>
-          <p style={{ margin: 0 }}>表示: <strong style={{ color: '#4ea8de' }}>感情宇宙空間</strong></p>
+          <p style={{ margin: '0 0 5px 0' }}>データ: Supabase + 語彙シード ({plots.filter((p) => p.mode === currentMode).length} 件)</p>
+          <p style={{ margin: 0 }}>現在の表示: <strong style={{ color: currentMode === 'emotion' ? '#4ea8de' : '#4abc96' }}>{currentMode === 'emotion' ? '感情空間' : '状態空間'}</strong></p>
         </div>
       </main>
     </div>
