@@ -1,6 +1,6 @@
 import { SELECTED_PLOT_SCALE } from './plotSelectionStyle';
 import type { UserPlotRow } from '../types/userPlot';
-import { isPurePlot } from '../utils/emotionPlotBridge';
+import { EMOTION_INTENSITY_MAX, isPurePlot } from '../utils/emotionPlotBridge';
 
 const MIN_FONT_SIZE = 4;
 const MAX_FONT_SIZE = 9;
@@ -45,7 +45,7 @@ export function getPlotLabelStyle(
 
 export function getPlotLabelTypography(plot: UserPlotRow, isSelected: boolean): PlotLabelTypography {
   const pure = isPurePlot(plot);
-  const intensityNorm = plot.intensity / 100;
+  const intensityNorm = plot.intensity / EMOTION_INTENSITY_MAX;
   const selectedWeightBoost = isSelected ? 80 : 0;
   const fontWeight = Math.round(
     Math.min(

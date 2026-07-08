@@ -69,7 +69,7 @@ export function generateExplorationDummyPlots(seed = 20260408): UserPlotRow[] {
             nextId(basic.label),
             basic.id,
             basic.id,
-            intensityBetween(rand, 25, 98),
+            intensityBetween(rand, 12, 49),
           ),
         );
         continue;
@@ -81,7 +81,7 @@ export function generateExplorationDummyPlots(seed = 20260408): UserPlotRow[] {
           nextId(basic.label),
           basic.id,
           neighbor,
-          intensityBetween(rand, 30, 92),
+          intensityBetween(rand, 15, 46),
         ),
       );
     }
@@ -94,7 +94,7 @@ export function generateExplorationDummyPlots(seed = 20260408): UserPlotRow[] {
           nextId(dyad.label),
           dyad.id,
           pickSecondary(dyad.components, rand),
-          intensityBetween(rand, 28, 90),
+          intensityBetween(rand, 14, 45),
         ),
       );
     }
@@ -108,7 +108,7 @@ export function generateExplorationDummyPlots(seed = 20260408): UserPlotRow[] {
           ? emotion.id
           : BASIC_EMOTIONS[Math.floor(rand() * BASIC_EMOTIONS.length)].id;
       plots.push(
-        makePlot(nextId('散在'), emotion.id, secondary, intensityBetween(rand, 15, 85)),
+        makePlot(nextId('散在'), emotion.id, secondary, intensityBetween(rand, 8, 42)),
       );
     } else if ('components' in emotion) {
       plots.push(
@@ -116,7 +116,7 @@ export function generateExplorationDummyPlots(seed = 20260408): UserPlotRow[] {
           nextId('散在'),
           emotion.id,
           pickSecondary(emotion.components, rand),
-          intensityBetween(rand, 20, 88),
+          intensityBetween(rand, 10, 44),
         ),
       );
     }

@@ -18,8 +18,14 @@ export interface EmotionPlotParams {
   isPure: boolean;
 }
 
+export const EMOTION_INTENSITY_MAX = 50;
+
 export function clampIntensity(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value)));
+  return Math.max(0, Math.min(EMOTION_INTENSITY_MAX, Math.round(value)));
+}
+
+export function rescaleLegacyIntensity(value: number): number {
+  return clampIntensity(value / 2);
 }
 
 export function isPurePlot(row: Pick<UserPlotRow, 'primaryId' | 'secondaryId'>): boolean {
@@ -70,7 +76,7 @@ function fromHueSaturation(word_id: string, hue: number, saturation: number): Us
     word_id,
     primaryId,
     secondaryId,
-    intensity: clampIntensity(saturation),
+    intensity: rescaleLegacyIntensity(saturation),
   });
 }
 
@@ -99,7 +105,7 @@ function fromEmotionVector(word_id: string, emotions: Record<string, number>): U
       word_id,
       primaryId: matchingDyad.id,
       secondaryId: second.id,
-      intensity: clampIntensity((top.value + second.value) / 2),
+      intensity: rescaleLegacyIntensity((top.value + second.value) / 2),
     });
   }
 
@@ -107,7 +113,7 @@ function fromEmotionVector(word_id: string, emotions: Record<string, number>): U
     word_id,
     primaryId: top.id,
     secondaryId: top.id,
-    intensity: clampIntensity(top.value),
+    intensity: rescaleLegacyIntensity(top.value),
   });
 }
 
@@ -164,5 +170,5 @@ export function emotionPlotColor(params: EmotionPlotParams): string {
   }
 
   const secondary = getBasicEmotion(params.secondaryId).color;
-  return blendHex(primary, secondary, params.intensity / 100);
+  return blendHex(primary, secondary, params.intensity / EMOTION_INTENSITY_MAX);
 }

@@ -5,14 +5,17 @@ import { getBasicEmotion, isBasicEmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import { getPrimaryEmotionColor, rowToEmotionParams } from '../utils/emotionPlotBridge';
 import { getEmotionCenter } from '../utils/emotionSpaceLayout';
-import { plotPositionFromRow } from '../utils/plotFromUserPlot';
+import { plotPositionFromRow, type PlotOrbitOverride } from '../utils/plotFromUserPlot';
 
 interface GravityAttractionParticlesProps {
   plot: UserPlotRow;
+  orbitOverride?: PlotOrbitOverride;
 }
 
 interface GravityStreamProps {
   plot: UserPlotRow;
+  orbitOverride?: PlotOrbitOverride;
+  source?: [number, number, number];
   target: [number, number, number];
   color: string;
   particleCount: number;
@@ -27,6 +30,8 @@ interface GravityStreamProps {
 
 function GravityStream({
   plot,
+  orbitOverride,
+  source,
   target,
   color,
   particleCount,
@@ -38,17 +43,14 @@ function GravityStream({
   reach = 1,
   phaseOffset = 0,
 }: GravityStreamProps) {
-  const groupRef = useRef<THREE.Group>(null);
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
   const start = useRef(new THREE.Vector3());
   const end = useMemo(() => new THREE.Vector3(...target), [target]);
   const temp = useRef(new THREE.Vector3());
   const spread = useRef(new THREE.Vector3());
   const wave = useRef(new THREE.Vector3());
   const baseColor = useMemo(() => new THREE.Color(color), [color]);
-  const particleIndexes = useMemo(
-    () => Array.from({ length: particleCount }, (_, index) => index),
-    [particleCount],
-  );
   const spreadDirections = useMemo(
     () =>
       Array.from({ length: particleCount }, (_, index) => {
@@ -61,13 +63,12 @@ function GravityStream({
   );
 
   useFrame((state) => {
-    const group = groupRef.current;
-    if (!group) return;
+    const mesh = meshRef.current;
+    if (!mesh) return;
 
-    start.current.set(...plotPositionFromRow(plot, state.clock.elapsedTime));
+    start.current.set(...(source ?? plotPositionFromRow(plot, state.clock.elapsedTime, orbitOverride)));
 
-    for (let i = 0; i < group.children.length; i += 1) {
-      const particle = group.children[i];
+    for (let i = 0; i < particleCount; i += 1) {
       const progress = (state.clock.elapsedTime * speed + i / particleCount + phaseOffset) % 1;
       const eased = progress * progress * (3 - 2 * progress);
       const reached = eased * reach;
@@ -84,28 +85,22 @@ function GravityStream({
         wave.current.copy(spreadDirections[(i * 7) % particleCount]).multiplyScalar(waveAmount);
         temp.current.add(wave.current);
       }
-      particle.position.copy(temp.current);
 
       const pulse = Math.sin(progress * Math.PI);
-      particle.scale.setScalar(0.28 + pulse * 0.36);
+      dummy.position.copy(temp.current);
+      dummy.scale.setScalar(particleSize * (0.28 + pulse * 0.36));
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
     }
+
+    mesh.instanceMatrix.needsUpdate = true;
   });
 
   return (
-    <group ref={groupRef}>
-      {particleIndexes.map((index) => (
-        <mesh key={index}>
-          <sphereGeometry args={[particleSize, 6, 6]} />
-          <meshBasicMaterial
-            color={baseColor}
-            transparent={false}
-            opacity={1}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </mesh>
-      ))}
-    </group>
+    <instancedMesh ref={meshRef} args={[undefined, undefined, particleCount]} frustumCulled={false}>
+      <sphereGeometry args={[1, 6, 6]} />
+      <meshBasicMaterial color={baseColor} depthWrite={false} toneMapped={false} />
+    </instancedMesh>
   );
 }
 
@@ -113,16 +108,19 @@ function vecToTuple(vec: { x: number; y: number; z: number }): [number, number, 
   return [vec.x, vec.y, vec.z];
 }
 
-export function GravityAttractionParticles({ plot }: GravityAttractionParticlesProps) {
+export function GravityAttractionParticles({ plot, orbitOverride }: GravityAttractionParticlesProps) {
   const params = rowToEmotionParams(plot);
   const primaryCenter = getEmotionCenter(params.primaryId);
   const secondaryCenter = getEmotionCenter(params.secondaryId);
   const showSecondary = !(isBasicEmotionId(params.primaryId) && params.primaryId === params.secondaryId);
+  const source = orbitOverride?.center;
 
   return (
     <>
       <GravityStream
         plot={plot}
+        orbitOverride={orbitOverride}
+        source={source}
         target={vecToTuple(primaryCenter)}
         color={getPrimaryEmotionColor(params.primaryId)}
         particleCount={132}
@@ -136,6 +134,8 @@ export function GravityAttractionParticles({ plot }: GravityAttractionParticlesP
       {showSecondary && (
         <GravityStream
           plot={plot}
+          orbitOverride={orbitOverride}
+          source={source}
           target={vecToTuple(secondaryCenter)}
           color={getBasicEmotion(params.secondaryId).color}
           particleCount={30}

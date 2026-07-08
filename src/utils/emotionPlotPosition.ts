@@ -1,4 +1,5 @@
 import type { EmotionPlotParams } from './emotionPlotBridge';
+import { EMOTION_INTENSITY_MAX } from './emotionPlotBridge';
 import {
   PURE_AREA_RATIO,
   getEmotionCenter,
@@ -6,6 +7,17 @@ import {
 } from './emotionSpaceLayout';
 
 const ORBIT_PLANE_VARIATION_RAD = Math.PI / 4;
+const MIXED_INTENSITY_POSITION_MAX = 50;
+
+export interface PlotOrbitOverride {
+  groupKey: string;
+  center: [number, number, number];
+  u: [number, number, number];
+  v: [number, number, number];
+  radius: number;
+  phase: number;
+  speed?: number;
+}
 
 function hashId(id: string): number {
   let hash = 0;
@@ -33,7 +45,7 @@ function orbitBasis(intensity: number, wordId: string): { u: [number, number, nu
 }
 
 function pureOrbitRadius(intensity: number, sphereRadius: number): number {
-  const t = 1 - intensity / 100;
+  const t = 1 - intensity / EMOTION_INTENSITY_MAX;
   return t * PURE_AREA_RATIO * sphereRadius;
 }
 
@@ -70,9 +82,22 @@ export function getEmotionPlotPosition(
   params: EmotionPlotParams,
   wordId: string,
   time = 0,
+  orbitOverride?: PlotOrbitOverride,
 ): [number, number, number] {
   const center = getEmotionCenter(params.primaryId);
   const sphereRadius = getEmotionSphereRadius(params.primaryId);
+
+  if (orbitOverride) {
+    const angle = time * (orbitOverride.speed ?? 0.35) + orbitOverride.phase;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+
+    return [
+      orbitOverride.center[0] + orbitOverride.radius * (cos * orbitOverride.u[0] + sin * orbitOverride.v[0]),
+      orbitOverride.center[1] + orbitOverride.radius * (cos * orbitOverride.u[1] + sin * orbitOverride.v[1]),
+      orbitOverride.center[2] + orbitOverride.radius * (cos * orbitOverride.u[2] + sin * orbitOverride.v[2]),
+    ];
+  }
 
   if (params.isPure) {
     const radius = pureOrbitRadius(params.intensity, sphereRadius);
@@ -93,9 +118,10 @@ export function getEmotionPlotPosition(
   const dz = secondaryCenter.z - center.z;
   const len = Math.hypot(dx, dy, dz) || 1;
 
-  const minDist = PURE_AREA_RATIO * sphereRadius;
-  const maxDist = sphereRadius * 0.88;
-  const dist = minDist + (params.intensity / 100) * (maxDist - minDist);
+  const intensityT = Math.min(params.intensity, MIXED_INTENSITY_POSITION_MAX) / MIXED_INTENSITY_POSITION_MAX;
+  const minDist = sphereRadius * 0.56;
+  const maxDist = sphereRadius * 1.46;
+  const dist = minDist + intensityT * (maxDist - minDist);
 
   return [
     center.x + (dx / len) * dist,

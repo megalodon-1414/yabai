@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { EMOTION_INTENSITY_MAX } from './emotionPlotBridge';
 
 export function blendHex(a: string, b: string, t: number): string {
   const parse = (hex: string) => {
@@ -17,7 +18,7 @@ export function pureColorByIntensity(hex: string, intensity: number): string {
   const color = new THREE.Color(hex);
   const hsl = { h: 0, s: 0, l: 0 };
   color.getHSL(hsl);
-  const t = intensity / 100;
+  const t = intensity / EMOTION_INTENSITY_MAX;
   const saturation = THREE.MathUtils.lerp(0.12, 1, t);
   const lightness = THREE.MathUtils.lerp(0.62, hsl.l, t);
   color.setHSL(hsl.h, hsl.s * saturation, lightness);

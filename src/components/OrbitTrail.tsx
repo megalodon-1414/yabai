@@ -6,11 +6,15 @@ import type { UserPlotRow } from '../types/userPlot';
 import { getAtmosphericAppearance } from '../utils/plotAtmosphere';
 import { getPureOrbitRingPoints } from '../utils/emotionPlotPosition';
 import { rowToEmotionParams } from '../utils/emotionPlotBridge';
-import { plotPositionFromRow } from '../utils/plotFromUserPlot';
+import { plotPositionFromRow, type PlotOrbitOverride } from '../utils/plotFromUserPlot';
 
 const ORBIT_LINE_WIDTH = 10;
 const PARTICLE_TRAIL_COUNT = 30;
-const PARTICLE_TRAIL_STEP_SECONDS = 0.28;
+const SUBTLE_PARTICLE_TRAIL_COUNT = 14;
+const PARTICLE_TRAIL_STEP_SECONDS = 0.45;
+const SELECTED_PARTICLE_TRAIL_STEP_SECONDS = 1.05;
+const PARTICLE_TRAIL_SIZE = 0.0075;
+const SUBTLE_PARTICLE_TRAIL_SIZE = 0.0048;
 
 interface OrbitTrailProps {
   plot: UserPlotRow;
@@ -18,43 +22,54 @@ interface OrbitTrailProps {
   isSelected: boolean;
   isNearbyVisible: boolean;
   particleTrail?: boolean;
+  selectedParticleTrail?: boolean;
+  subtleParticleTrail?: boolean;
+  orbitOverride?: PlotOrbitOverride;
+  orbitTimeScale?: number;
 }
 
-function OrbitParticleTrail({ plot, color }: Pick<OrbitTrailProps, 'plot' | 'color'>) {
-  const groupRef = useRef<THREE.Group>(null);
+function OrbitParticleTrail({
+  plot,
+  color,
+  selectedParticleTrail = false,
+  subtleParticleTrail = false,
+  orbitOverride,
+  orbitTimeScale = 1,
+}: Pick<
+  OrbitTrailProps,
+  'plot' | 'color' | 'selectedParticleTrail' | 'subtleParticleTrail' | 'orbitOverride' | 'orbitTimeScale'
+>) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
   const baseColor = useMemo(() => new THREE.Color(color), [color]);
-  const particleIndexes = useMemo(
-    () => Array.from({ length: PARTICLE_TRAIL_COUNT }, (_, index) => index),
-    [],
-  );
+  const particleCount = subtleParticleTrail ? SUBTLE_PARTICLE_TRAIL_COUNT : PARTICLE_TRAIL_COUNT;
+  const particleSize = subtleParticleTrail ? SUBTLE_PARTICLE_TRAIL_SIZE : PARTICLE_TRAIL_SIZE;
+  const particleOpacity = subtleParticleTrail ? 0.36 : 0.68;
+  const particleStepSeconds = selectedParticleTrail
+    ? SELECTED_PARTICLE_TRAIL_STEP_SECONDS
+    : PARTICLE_TRAIL_STEP_SECONDS;
 
   useFrame((state) => {
-    const group = groupRef.current;
-    if (!group) return;
+    const mesh = meshRef.current;
+    if (!mesh) return;
 
-    for (let i = 0; i < group.children.length; i += 1) {
-      const child = group.children[i];
-      const age = i * PARTICLE_TRAIL_STEP_SECONDS;
-      child.position.set(...plotPositionFromRow(plot, state.clock.elapsedTime - age));
-      child.scale.setScalar(1 - i / PARTICLE_TRAIL_COUNT * 0.72);
+    for (let i = 0; i < particleCount; i += 1) {
+      const age = i * particleStepSeconds;
+      const fade = 1 - i / particleCount;
+      dummy.position.set(...plotPositionFromRow(plot, (state.clock.elapsedTime - age) * orbitTimeScale, orbitOverride));
+      dummy.scale.setScalar(particleSize * Math.pow(fade, 0.72));
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
     }
+
+    mesh.instanceMatrix.needsUpdate = true;
   });
 
   return (
-    <group ref={groupRef}>
-      {particleIndexes.map((index) => (
-        <mesh key={index}>
-          <sphereGeometry args={[0.0075, 6, 6]} />
-          <meshBasicMaterial
-            color={baseColor}
-            transparent
-            opacity={1 - index / PARTICLE_TRAIL_COUNT * 0.84}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </mesh>
-      ))}
-    </group>
+    <instancedMesh ref={meshRef} args={[undefined, undefined, particleCount]} frustumCulled={false}>
+      <sphereGeometry args={[1, 6, 6]} />
+      <meshBasicMaterial color={baseColor} transparent opacity={particleOpacity} depthWrite={false} toneMapped={false} />
+    </instancedMesh>
   );
 }
 
@@ -64,6 +79,10 @@ export function OrbitTrail({
   isSelected,
   isNearbyVisible,
   particleTrail = false,
+  selectedParticleTrail = false,
+  subtleParticleTrail = false,
+  orbitOverride,
+  orbitTimeScale = 1,
 }: OrbitTrailProps) {
   const { camera, size } = useThree();
   const meshRef = useRef<THREE.Mesh>(null);
@@ -73,7 +92,16 @@ export function OrbitTrail({
   const baseColor = useMemo(() => new THREE.Color(color), [color]);
 
   if (particleTrail) {
-    return <OrbitParticleTrail plot={plot} color={color} />;
+    return (
+      <OrbitParticleTrail
+        plot={plot}
+        color={color}
+        selectedParticleTrail={selectedParticleTrail}
+        subtleParticleTrail={subtleParticleTrail}
+        orbitOverride={orbitOverride}
+        orbitTimeScale={orbitTimeScale}
+      />
+    );
   }
 
   const trailMesh = useMemo(() => {

@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import type { BasicEmotionId, EmotionId } from '../data/emotions';
 import { BASIC_EMOTIONS, DYAD_EMOTIONS, getEmotionById, isBasicEmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
-import { clampIntensity, isPurePlot, normalizeUserPlotRow } from '../utils/emotionPlotBridge';
+import { EMOTION_INTENSITY_MAX, clampIntensity, isPurePlot, normalizeUserPlotRow } from '../utils/emotionPlotBridge';
 
 interface EmotionPlotEditorProps {
   plot: UserPlotRow;
@@ -89,13 +89,13 @@ export function EmotionPlotEditor({ plot, onChange }: EmotionPlotEditorProps) {
 
       <label style={{ display: 'block', marginBottom: '8px' }}>
         <span style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '0.85rem', color: '#c5c6c7' }}>
-          <span>強度 (0〜100)</span>
+          <span>強度 (0〜{EMOTION_INTENSITY_MAX})</span>
           <span style={{ color: '#45f3ff' }}>{plot.intensity}</span>
         </span>
         <input
           type="range"
           min={0}
-          max={100}
+          max={EMOTION_INTENSITY_MAX}
           step={1}
           value={plot.intensity}
           onChange={(e) =>

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import * as THREE from 'three';
 import { getAllEmotionCenters, getEmotionSphereRadius } from '../utils/emotionSpaceLayout';
 import { isBasicEmotionId } from '../data/emotions';
 
@@ -61,13 +62,6 @@ function SparseVoidPoints() {
   );
 }
 
-interface EmotionPointCloudProps {
-  position: [number, number, number];
-  color: string;
-  radius: number;
-  isBasic: boolean;
-}
-
 function createRadialGridPoints(radius: number, isBasic: boolean): Float32Array {
   const directionCount = isBasic ? 56 : 30;
   const radialSteps = isBasic ? 5 : 4;
@@ -95,47 +89,56 @@ function createRadialGridPoints(radius: number, isBasic: boolean): Float32Array 
   return positions;
 }
 
-function EmotionPointCloud({ position, color, radius, isBasic }: EmotionPointCloudProps) {
-  const points = useMemo(() => createRadialGridPoints(radius, isBasic), [radius, isBasic]);
-  const pointSize = isBasic ? 0.012 : 0.009;
-  const opacity = isBasic ? 0.9 : 0.72;
+interface CombinedEmotionPointCloudProps {
+  areas: ReturnType<typeof getAllEmotionCenters>;
+}
+
+function CombinedEmotionPointCloud({ areas }: CombinedEmotionPointCloudProps) {
+  const { positions, colors } = useMemo(() => {
+    const positionValues: number[] = [];
+    const colorValues: number[] = [];
+    const color = new THREE.Color();
+
+    for (const area of areas) {
+      const basic = isBasicEmotionId(area.id);
+      const localPoints = createRadialGridPoints(getEmotionSphereRadius(area.id), basic);
+      color.setStyle(area.color);
+
+      for (let i = 0; i < localPoints.length; i += 3) {
+        positionValues.push(
+          area.position.x + localPoints[i],
+          area.position.y + localPoints[i + 1],
+          area.position.z + localPoints[i + 2],
+        );
+        colorValues.push(color.r, color.g, color.b);
+      }
+
+      positionValues.push(area.position.x, area.position.y, area.position.z);
+      colorValues.push(color.r, color.g, color.b);
+    }
+
+    return {
+      positions: new Float32Array(positionValues),
+      colors: new Float32Array(colorValues),
+    };
+  }, [areas]);
 
   return (
-    <points position={position}>
+    <points>
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[points, 3]} />
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        <bufferAttribute attach="attributes-color" args={[colors, 3]} />
       </bufferGeometry>
       <pointsMaterial
-        size={pointSize}
-        color={color}
+        size={0.011}
         transparent
-        opacity={opacity}
+        opacity={0.82}
         depthWrite={false}
         sizeAttenuation
         toneMapped={false}
+        vertexColors
       />
     </points>
-  );
-}
-
-interface EmotionCenterPointProps {
-  position: [number, number, number];
-  color: string;
-  isBasic: boolean;
-}
-
-function EmotionCenterPoint({ position, color, isBasic }: EmotionCenterPointProps) {
-  return (
-    <mesh position={position}>
-      <sphereGeometry args={[isBasic ? 0.022 : 0.016, 6, 6]} />
-      <meshBasicMaterial
-        color={color}
-        transparent
-        opacity={isBasic ? 0.95 : 0.78}
-        depthWrite={false}
-        toneMapped={false}
-      />
-    </mesh>
   );
 }
 
@@ -162,21 +165,7 @@ export function EmotionSpaceAreas({ visible = true, lite = false }: EmotionSpace
           <pointLight position={[-6, -4, -8]} intensity={0.6} color="#ff9eb5" />
         </>
       )}
-      {areas.map((area) => (
-        <group key={area.id}>
-          <EmotionPointCloud
-            position={[area.position.x, area.position.y, area.position.z]}
-            color={area.color}
-            radius={getEmotionSphereRadius(area.id)}
-            isBasic={isBasicEmotionId(area.id)}
-          />
-          <EmotionCenterPoint
-            position={[area.position.x, area.position.y, area.position.z]}
-            color={area.color}
-            isBasic={isBasicEmotionId(area.id)}
-          />
-        </group>
-      ))}
+      <CombinedEmotionPointCloud areas={areas} />
     </group>
   );
 }

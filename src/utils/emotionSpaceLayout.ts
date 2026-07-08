@@ -2,12 +2,12 @@ import type { BasicEmotionId, EmotionId } from '../data/emotions';
 import type { DyadEmotion } from '../data/emotions';
 import { BASIC_EMOTIONS, DYAD_EMOTIONS, getBasicEmotion, isBasicEmotionId } from '../data/emotions';
 
-export const RING_RADIUS = 6;
+export const RING_RADIUS = 7.5;
 /** 上段4感情（喜・恐・悲・怒）の Y、下段4感情（信・驚・嫌・期）の Y */
-export const Y_LAYER_OFFSET = 4.5;
-export const EMOTION_SPHERE_RADIUS = 1.15;
-export const DYAD_SPHERE_RADIUS = 0.72;
-export const PURE_AREA_RATIO = 0.55;
+export const Y_LAYER_OFFSET = 5.6;
+export const EMOTION_SPHERE_RADIUS = 1.45;
+export const DYAD_SPHERE_RADIUS = 0.9;
+export const PURE_AREA_RATIO = 0.46;
 
 export function getEmotionSphereRadius(id: EmotionId): number {
   return isBasicEmotionId(id) ? EMOTION_SPHERE_RADIUS : DYAD_SPHERE_RADIUS;

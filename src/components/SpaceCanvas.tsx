@@ -3,18 +3,23 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { UserPlotRow } from '../types/userPlot';
 import {
+  createMixedPlotOrbitOverrides,
   getNearbyPlotIds,
   isPureEmotionPlot,
   plotColorFromRow,
   plotPositionFromRow,
+  type PlotOrbitOverride,
 } from '../utils/plotFromUserPlot';
 import { applySelectionViewOffset, clearSelectionViewOffset } from '../utils/cameraFocus';
+import { getPrimaryEmotionColor } from '../utils/emotionPlotBridge';
 import {
   EXPLORATION_CAMERA_DISTANCE,
   EXPLORATION_NEARBY_RADIUS,
   EXPLORATION_SCREEN_ANCHOR,
 } from '../utils/explorationMode';
+import { getEmotionCenter } from '../utils/emotionSpaceLayout';
 import { EmotionSpaceAreas } from './EmotionSpaceAreas';
+import { ExplorationDistantPlotCloud } from './ExplorationDistantPlotCloud';
 import { GravityAttractionParticles } from './GravityAttractionParticles';
 import { OrbitTrail } from './OrbitTrail';
 import { WordPlot } from './WordPlot';
@@ -30,6 +35,9 @@ const TARGET_LERP_SPEED = 6;
 const TARGET_ARRIVAL_THRESHOLD = 0.2;
 const ROTATION_SPEED = 0.006;
 const WHEEL_ZOOM_SPEED = 0.0015;
+const EXPLORATION_ORBIT_SCREEN_ANCHOR = { x: 0.24, y: 0.5 };
+const EXPLORATION_ORBIT_CAMERA_DISTANCE = 1.3;
+const SELECTED_ORBIT_TIME_SCALE = 0.18;
 
 type FocusPhase = 'idle' | 'movingTarget' | 'movingView' | 'adjustingZoom' | 'focused';
 
@@ -37,6 +45,9 @@ interface SpaceCanvasProps {
   plots: UserPlotRow[];
   selectedId: string | null;
   explorationMode?: boolean;
+  onSelectedScreenPosition?: (point: { x: number; y: number; visible: boolean } | null) => void;
+  onHoveredWordChange?: (wordId: string | null) => void;
+  onHoveredScreenPosition?: (point: { x: number; y: number; visible: boolean } | null) => void;
   onWordSelect: (id: string) => void;
 }
 
@@ -45,6 +56,8 @@ interface CameraControlsProps {
   cameraTarget: [number, number, number];
   focusOnSelection: boolean;
   explorationFocus?: boolean;
+  explorationAnchor?: { x: number; y: number };
+  explorationDistance?: number;
 }
 
 function CameraControls({
@@ -52,6 +65,8 @@ function CameraControls({
   cameraTarget,
   focusOnSelection,
   explorationFocus = false,
+  explorationAnchor = EXPLORATION_SCREEN_ANCHOR,
+  explorationDistance = EXPLORATION_CAMERA_DISTANCE,
 }: CameraControlsProps) {
   const { camera, gl, size } = useThree();
   const baseTarget = useRef(new THREE.Vector3(...DEFAULT_CAMERA_TARGET));
@@ -68,8 +83,8 @@ function CameraControls({
   const focusPhase = useRef<FocusPhase>('idle');
   const prevFocusOnSelection = useRef(focusOnSelection);
 
-  const focusDistance = explorationFocus ? EXPLORATION_CAMERA_DISTANCE : SELECTION_CAMERA_DISTANCE;
-  const screenAnchor = explorationFocus ? EXPLORATION_SCREEN_ANCHOR : undefined;
+  const focusDistance = explorationFocus ? explorationDistance : SELECTION_CAMERA_DISTANCE;
+  const screenAnchor = explorationFocus ? explorationAnchor : undefined;
   const enableRotate = !focusOnSelection || explorationFocus;
   const enableZoom = !focusOnSelection;
 
@@ -102,7 +117,7 @@ function CameraControls({
     }
 
     prevFocusOnSelection.current = focusOnSelection;
-  }, [cameraTarget, focusOnSelection, camera]);
+  }, [cameraTarget, focusOnSelection, explorationAnchor, camera]);
 
   const applyCameraDistance = (distance: number, target: THREE.Vector3) => {
     cameraOffsetDirection.current.copy(camera.position).sub(target);
@@ -288,13 +303,89 @@ function CameraControls({
   return null;
 }
 
-export function SpaceCanvas({ plots, selectedId, explorationMode = false, onWordSelect }: SpaceCanvasProps) {
+interface SelectedScreenPointTrackerProps {
+  plot: UserPlotRow | null;
+  active: boolean;
+  orbitOverride?: PlotOrbitOverride;
+  orbitTimeScale?: number;
+  onChange?: (point: { x: number; y: number; visible: boolean } | null) => void;
+}
+
+function SelectedScreenPointTracker({
+  plot,
+  active,
+  orbitOverride,
+  orbitTimeScale = 1,
+  onChange,
+}: SelectedScreenPointTrackerProps) {
+  const { camera, size } = useThree();
+  const projected = useRef(new THREE.Vector3());
+  const lastPoint = useRef<{ x: number; y: number; visible: boolean } | null>(null);
+  const frameCounter = useRef(0);
+
+  useEffect(() => {
+    if (!active || !plot) {
+      lastPoint.current = null;
+      onChange?.(null);
+    }
+  }, [active, plot, onChange]);
+
+  useFrame((state) => {
+    if (!active || !plot || !onChange) return;
+    frameCounter.current = (frameCounter.current + 1) % 2;
+    if (frameCounter.current !== 0) return;
+
+    projected.current
+      .set(...plotPositionFromRow(plot, state.clock.elapsedTime * orbitTimeScale, orbitOverride))
+      .project(camera);
+    const next = {
+      x: (projected.current.x * 0.5 + 0.5) * size.width,
+      y: (-projected.current.y * 0.5 + 0.5) * size.height,
+      visible: projected.current.z >= -1 && projected.current.z <= 1,
+    };
+    const prev = lastPoint.current;
+    const moved = !prev || Math.hypot(prev.x - next.x, prev.y - next.y) > 0.75 || prev.visible !== next.visible;
+
+    if (moved) {
+      lastPoint.current = next;
+      onChange(next);
+    }
+  });
+
+  return null;
+}
+
+export function SpaceCanvas({
+  plots,
+  selectedId,
+  explorationMode = false,
+  onSelectedScreenPosition,
+  onHoveredWordChange,
+  onHoveredScreenPosition,
+  onWordSelect,
+}: SpaceCanvasProps) {
   const [resetCount, setResetCount] = useState(0);
   const [isDefaultView, setIsDefaultView] = useState(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const selectedPlot = useMemo(
     () => plots.find((plot) => plot.word_id === selectedId) ?? null,
     [plots, selectedId],
   );
+  const hoveredPlot = useMemo(
+    () => plots.find((plot) => plot.word_id === hoveredId) ?? null,
+    [plots, hoveredId],
+  );
+  const mixedOrbitOverrides = useMemo(() => createMixedPlotOrbitOverrides(plots), [plots]);
+  const isSelectedOrbitingPlot = explorationMode && selectedPlot ? isPureEmotionPlot(selectedPlot) : false;
+  const selectedMixedOrbit = selectedPlot ? mixedOrbitOverrides.get(selectedPlot.word_id) : undefined;
+  const selectedOrbitCenter = useMemo((): [number, number, number] | null => {
+    if (!isSelectedOrbitingPlot || !selectedPlot) {
+      return null;
+    }
+
+    const center = getEmotionCenter(selectedPlot.primaryId);
+    return [center.x, center.y, center.z];
+  }, [isSelectedOrbitingPlot, selectedPlot?.primaryId]);
 
   const cameraTarget = useMemo((): [number, number, number] => {
     if (isDefaultView || !selectedId) {
@@ -305,8 +396,16 @@ export function SpaceCanvas({ plots, selectedId, explorationMode = false, onWord
       return DEFAULT_CAMERA_TARGET;
     }
 
-    return plotPositionFromRow(selectedPlot);
-  }, [isDefaultView, selectedId, selectedPlot]);
+    if (selectedOrbitCenter) {
+      return selectedOrbitCenter;
+    }
+
+    if (selectedMixedOrbit) {
+      return selectedMixedOrbit.center;
+    }
+
+    return plotPositionFromRow(selectedPlot, 0, selectedMixedOrbit);
+  }, [isDefaultView, selectedId, selectedPlot, selectedOrbitCenter, selectedMixedOrbit]);
 
   const nearbyPlotIds = useMemo(() => {
     if (!selectedId || isDefaultView) {
@@ -314,11 +413,11 @@ export function SpaceCanvas({ plots, selectedId, explorationMode = false, onWord
     }
 
     if (explorationMode) {
-      return getNearbyPlotIds(plots, selectedId, EXPLORATION_NEARBY_RADIUS);
+      return getNearbyPlotIds(plots, selectedId, EXPLORATION_NEARBY_RADIUS, mixedOrbitOverrides);
     }
 
-    return getNearbyPlotIds(plots, selectedId);
-  }, [plots, selectedId, isDefaultView, explorationMode]);
+    return getNearbyPlotIds(plots, selectedId, undefined, mixedOrbitOverrides);
+  }, [plots, selectedId, isDefaultView, explorationMode, mixedOrbitOverrides]);
 
   const sameEmotionOrbitPlots = useMemo(() => {
     if (!explorationMode || isDefaultView || !selectedPlot) {
@@ -333,11 +432,37 @@ export function SpaceCanvas({ plots, selectedId, explorationMode = false, onWord
     );
   }, [explorationMode, isDefaultView, plots, selectedPlot]);
 
+  const interactivePlots = useMemo(() => {
+    if (!explorationMode || !nearbyPlotIds) {
+      return plots;
+    }
+
+    return plots.filter((plot) => plot.word_id === selectedId || nearbyPlotIds.has(plot.word_id));
+  }, [explorationMode, nearbyPlotIds, plots, selectedId]);
+
+  const distantPlots = useMemo(() => {
+    if (!explorationMode || !nearbyPlotIds) {
+      return [];
+    }
+
+    return plots.filter((plot) => plot.word_id !== selectedId && !nearbyPlotIds.has(plot.word_id));
+  }, [explorationMode, nearbyPlotIds, plots, selectedId]);
+
   const isExplorationFocused = explorationMode && !isDefaultView && selectedId !== null;
+
+  const getOrbitTimeScale = (plot: UserPlotRow | null): number =>
+    isSelectedOrbitingPlot && selectedPlot && plot && isPureEmotionPlot(plot) && plot.primaryId === selectedPlot.primaryId
+      ? SELECTED_ORBIT_TIME_SCALE
+      : 1;
 
   const handleWordSelect = (id: string) => {
     setIsDefaultView(false);
     onWordSelect(id);
+  };
+
+  const handleWordHover = (id: string | null) => {
+    setHoveredId(id);
+    onHoveredWordChange?.(id);
   };
 
   useEffect(() => {
@@ -375,6 +500,7 @@ export function SpaceCanvas({ plots, selectedId, explorationMode = false, onWord
 
       <Canvas
         camera={{ position: DEFAULT_CAMERA_POSITION, fov: DEFAULT_CAMERA_FOV }}
+        dpr={explorationMode ? [1, 1.25] : [1, 2]}
         style={{ width: '100%', height: '100%' }}
       >
         <color attach="background" args={['#030508']} />
@@ -386,13 +512,41 @@ export function SpaceCanvas({ plots, selectedId, explorationMode = false, onWord
           cameraTarget={cameraTarget}
           focusOnSelection={isExplorationFocused || (!explorationMode && !isDefaultView && selectedId !== null)}
           explorationFocus={isExplorationFocused}
+          explorationAnchor={isSelectedOrbitingPlot ? EXPLORATION_ORBIT_SCREEN_ANCHOR : EXPLORATION_SCREEN_ANCHOR}
+          explorationDistance={isSelectedOrbitingPlot ? EXPLORATION_ORBIT_CAMERA_DISTANCE : EXPLORATION_CAMERA_DISTANCE}
+        />
+        <SelectedScreenPointTracker
+          plot={selectedPlot}
+          active={explorationMode && !isDefaultView && selectedPlot !== null}
+          orbitOverride={selectedPlot ? mixedOrbitOverrides.get(selectedPlot.word_id) : undefined}
+          orbitTimeScale={getOrbitTimeScale(selectedPlot)}
+          onChange={onSelectedScreenPosition}
+        />
+        <SelectedScreenPointTracker
+          plot={hoveredPlot}
+          active={explorationMode && !isDefaultView && hoveredPlot !== null}
+          orbitOverride={hoveredPlot ? mixedOrbitOverrides.get(hoveredPlot.word_id) : undefined}
+          orbitTimeScale={getOrbitTimeScale(hoveredPlot)}
+          onChange={onHoveredScreenPosition}
         />
 
         <EmotionSpaceAreas lite={explorationMode} />
 
         <Suspense fallback={null}>
-          {explorationMode && selectedPlot && !isDefaultView && (
-            <GravityAttractionParticles plot={selectedPlot} />
+          {selectedOrbitCenter && selectedPlot && (
+            <pointLight
+              position={selectedOrbitCenter}
+              color={getPrimaryEmotionColor(selectedPlot.primaryId)}
+              intensity={1.45}
+              distance={3.2}
+              decay={2}
+            />
+          )}
+          {explorationMode && selectedPlot && !isDefaultView && !isSelectedOrbitingPlot && (
+            <GravityAttractionParticles
+              plot={selectedPlot}
+              orbitOverride={mixedOrbitOverrides.get(selectedPlot.word_id)}
+            />
           )}
           {sameEmotionOrbitPlots.map((plot) => (
             <OrbitTrail
@@ -402,15 +556,21 @@ export function SpaceCanvas({ plots, selectedId, explorationMode = false, onWord
               isSelected
               isNearbyVisible
               particleTrail
+              selectedParticleTrail={isSelectedOrbitingPlot}
+              orbitTimeScale={getOrbitTimeScale(plot)}
             />
           ))}
-          {plots.map((plot) => (
+          <ExplorationDistantPlotCloud plots={distantPlots} orbitOverrides={mixedOrbitOverrides} />
+          {interactivePlots.map((plot) => (
             <WordPlot
               key={plot.word_id}
               plot={plot}
               isSelected={plot.word_id === selectedId}
               isNearbyVisible={!nearbyPlotIds || nearbyPlotIds.has(plot.word_id)}
               explorationMode={explorationMode}
+              orbitOverride={mixedOrbitOverrides.get(plot.word_id)}
+              orbitTimeScale={getOrbitTimeScale(plot)}
+              onHoverChange={handleWordHover}
               onSelect={handleWordSelect}
             />
           ))}

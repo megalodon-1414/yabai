@@ -7,8 +7,13 @@ import type { UserPlotRow } from '../types/userPlot';
 import { getPrimaryEmotionColor, rowToEmotionParams } from '../utils/emotionPlotBridge';
 import { getEmotionCenter } from '../utils/emotionSpaceLayout';
 import { getAtmosphericAppearance, getPlotPointAppearance } from '../utils/plotAtmosphere';
-import { isPureEmotionPlot, plotColorFromRow, plotPositionFromRow } from '../utils/plotFromUserPlot';
-import { SELECTED_PLOT_SCALE, EXPLORATION_SELECTED_PLOT_SCALE } from '../utils/plotSelectionStyle';
+import {
+  isPureEmotionPlot,
+  plotColorFromRow,
+  plotPositionFromRow,
+  type PlotOrbitOverride,
+} from '../utils/plotFromUserPlot';
+import { SELECTED_PLOT_SCALE } from '../utils/plotSelectionStyle';
 import { getPlotLabelStyle, getPlotLabelTypography } from '../utils/plotLabelStyle';
 import { OrbitTrail } from './OrbitTrail';
 
@@ -22,6 +27,9 @@ interface WordPlotProps {
   isSelected: boolean;
   isNearbyVisible: boolean;
   explorationMode?: boolean;
+  orbitOverride?: PlotOrbitOverride;
+  orbitTimeScale?: number;
+  onHoverChange?: (wordId: string | null) => void;
   onSelect: (wordId: string) => void;
 }
 
@@ -30,6 +38,9 @@ export function WordPlot({
   isSelected,
   isNearbyVisible,
   explorationMode = false,
+  orbitOverride,
+  orbitTimeScale = 1,
+  onHoverChange,
   onSelect,
 }: WordPlotProps) {
   const { size, camera } = useThree();
@@ -50,8 +61,8 @@ export function WordPlot({
   const visibility = useRef(isNearbyVisible ? 1 : 0);
   const isOrbiting = isPureEmotionPlot(plot);
 
-  const selectedScale = explorationMode && isSelected ? EXPLORATION_SELECTED_PLOT_SCALE : SELECTED_PLOT_SCALE;
-  const showLabel = !explorationMode || isSelected;
+  const selectedScale = explorationMode && isSelected ? 1 : SELECTED_PLOT_SCALE;
+  const showLabel = !explorationMode;
   const isDistantExplorationPlot = explorationMode && !isNearbyVisible && !isSelected;
   const isSelectable = !explorationMode || isNearbyVisible || isSelected;
 
@@ -63,7 +74,7 @@ export function WordPlot({
     () => getPlotLabelTypography(plot, isSelected),
     [plot, isSelected],
   );
-  const staticPosition = useMemo(() => plotPositionFromRow(plot), [plot]);
+  const staticPosition = useMemo(() => plotPositionFromRow(plot, 0, orbitOverride), [plot, orbitOverride]);
   const color = useMemo(() => plotColorFromRow(plot), [plot]);
   const emotionParams = useMemo(() => rowToEmotionParams(plot), [plot]);
   const primaryColor = useMemo(() => {
@@ -89,8 +100,9 @@ export function WordPlot({
     const mesh = meshRef.current;
     if (!group || !mesh) return;
 
-    const [x, y, z] = isOrbiting
-      ? plotPositionFromRow(plot, state.clock.elapsedTime)
+    const orbitTime = state.clock.elapsedTime * orbitTimeScale;
+    const [x, y, z] = isOrbiting || orbitOverride
+      ? plotPositionFromRow(plot, orbitTime, orbitOverride)
       : staticPosition;
     group.position.set(x, y, z);
 
@@ -132,7 +144,7 @@ export function WordPlot({
     coreMaterial.emissive.copy(appearance.color);
     coreMaterial.emissiveIntensity = appearance.emissiveIntensity;
 
-    if (explorationMode && isSelected) {
+    if (explorationMode && isSelected && !isOrbiting) {
       const pulse = (Math.sin(state.clock.elapsedTime * 1.35) + 1) / 2;
       dynamicColor.current.copy(primaryColor).lerp(secondaryColor, pulse * 0.42);
       dynamicEmissive.current.copy(appearance.color).lerp(dynamicColor.current, 0.55);
@@ -183,17 +195,21 @@ export function WordPlot({
 
   return (
     <>
-      {isOrbiting && (!explorationMode || isSelected) && (
+      {(isOrbiting && (!explorationMode || isSelected)) || (explorationMode && orbitOverride) ? (
         <OrbitTrail
           plot={plot}
           color={color}
           isSelected={isSelected}
           isNearbyVisible={isNearbyVisible}
-          particleTrail={explorationMode && isSelected}
+          particleTrail={explorationMode && (isSelected || Boolean(orbitOverride))}
+          selectedParticleTrail={explorationMode && isSelected && isOrbiting}
+          subtleParticleTrail={Boolean(orbitOverride)}
+          orbitOverride={orbitOverride}
+          orbitTimeScale={orbitTimeScale}
         />
-      )}
+      ) : null}
       <group ref={groupRef} position={staticPosition}>
-        {explorationMode && isSelected && (
+        {explorationMode && isSelected && !isOrbiting && (
           <>
             <pointLight ref={primaryLightRef} distance={1.4} decay={2} />
             {!emotionParams.isPure && <pointLight ref={secondaryLightRef} distance={1.1} decay={2} />}
@@ -209,12 +225,14 @@ export function WordPlot({
 
             event.stopPropagation();
             document.body.style.cursor = 'pointer';
+            onHoverChange?.(plot.word_id);
           }}
           onPointerOut={() => {
             document.body.style.cursor = 'auto';
+            onHoverChange?.(null);
           }}
         >
-          <sphereGeometry args={[0.044, 16, 16]} />
+          <sphereGeometry args={[0.032, 12, 12]} />
           <meshStandardMaterial
             color={color}
             emissive={color}
@@ -227,8 +245,8 @@ export function WordPlot({
           />
         </mesh>
 
-        <Html center distanceFactor={labelStyle.distanceFactor} style={{ pointerEvents: 'none', userSelect: 'none' }}>
-          {showLabel && (
+        {showLabel && (
+          <Html center distanceFactor={labelStyle.distanceFactor} style={{ pointerEvents: 'none', userSelect: 'none' }}>
             <div
               ref={labelRef}
               style={{
@@ -245,8 +263,8 @@ export function WordPlot({
             >
               {plot.word_id}
             </div>
-          )}
-        </Html>
+          </Html>
+        )}
       </group>
     </>
   );
