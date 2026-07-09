@@ -7,7 +7,7 @@ export const EXPLORATION_NEARBY_RADIUS = 3.2;
 export const EXPLORATION_CAMERA_DISTANCE = 0.4;
 
 /** 探索モードで選択中プロットを置く画面位置（原点は左下） */
-export const EXPLORATION_SCREEN_ANCHOR = { x: 0.24, y: 0.28 };
+export const EXPLORATION_SCREEN_ANCHOR = { x: 0.24, y: 0.5 };
 
 export function pickRandomPlotId(plots: UserPlotRow[]): string | null {
   if (plots.length === 0) {

@@ -13,6 +13,9 @@ import {
 import { isExplorationDummyPlot, mergeExplorationDummyPlots } from './utils/explorationDummyPlots';
 import { EMOTION_INTENSITY_MAX } from './utils/emotionPlotBridge';
 import { pickRandomPlotId } from './utils/explorationMode';
+import { getBackgroundThemeColors, type AppBackgroundTheme } from './utils/appBackgroundTheme';
+import { FLOW_LABEL_DURATION_MS, type PlotLabelDisplayMode } from './utils/plotLabelStyle';
+import { getExplorationInfoUiLayout } from './utils/explorationInfoUiLayout';
 import { mergeWithSeedPlots } from './utils/seedPlots';
 
 function App() {
@@ -21,16 +24,58 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedScreenPoint, setSelectedScreenPoint] = useState<{ x: number; y: number; visible: boolean } | null>(null);
   const [hoveredWordId, setHoveredWordId] = useState<string | null>(null);
+  const [flowLabelExpiresAt, setFlowLabelExpiresAt] = useState<Record<string, number>>({});
+  const [flowLabelNow, setFlowLabelNow] = useState(() => Date.now());
   const [hoveredWarpGateLabel, setHoveredWarpGateLabel] = useState<string | null>(null);
   const [hoveredScreenPoint, setHoveredScreenPoint] = useState<{ x: number; y: number; visible: boolean } | null>(null);
   const [mainSize, setMainSize] = useState({ width: 0, height: 0 });
   const [infoPanelWordId, setInfoPanelWordId] = useState<string | null>(null);
   const [isInfoPanelVisible, setIsInfoPanelVisible] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(true);
+  const [plotLabelDisplayMode, setPlotLabelDisplayMode] = useState<PlotLabelDisplayMode>('flow');
+  const [backgroundTheme, setBackgroundTheme] = useState<AppBackgroundTheme>('dark');
   const [isExplorationMode] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const { plotStatus } = usePlotSubmit();
+
+  const togglePlotLabelDisplayMode = useCallback(() => {
+    setPlotLabelDisplayMode((mode) => (mode === 'flow' ? 'nearby' : 'flow'));
+  }, []);
+
+  const toggleBackgroundTheme = useCallback(() => {
+    setBackgroundTheme((theme) => (theme === 'dark' ? 'light' : 'dark'));
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')
+      ) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === 'l') {
+        event.preventDefault();
+        togglePlotLabelDisplayMode();
+        return;
+      }
+      if (key === 'b') {
+        event.preventDefault();
+        toggleBackgroundTheme();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleBackgroundTheme, togglePlotLabelDisplayMode]);
 
   const loadPlots = useCallback(async () => {
     setIsLoading(true);
@@ -180,12 +225,24 @@ function App() {
     [],
   );
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setFlowLabelNow(Date.now());
+    }, 100);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   const handleHoveredWordChange = useCallback((wordId: string | null) => {
     setHoveredWordId(wordId);
     if (wordId) {
       setHoveredWarpGateLabel(null);
+      setFlowLabelExpiresAt((prev) => ({
+        ...prev,
+        [wordId]: Date.now() + FLOW_LABEL_DURATION_MS,
+      }));
     }
-  }, []);
+  }, [FLOW_LABEL_DURATION_MS]);
 
   const handleHoveredWarpGateChange = useCallback((label: string | null) => {
     setHoveredWarpGateLabel(label);
@@ -201,23 +258,12 @@ function App() {
     selectedScreenPoint &&
     mainSize.width > 0 &&
     mainSize.height > 0;
-  const uiGroupLeftPercent = 48;
-  const uiGroupLeft = mainSize.width * (uiGroupLeftPercent / 100);
-  const uiGroupTop = Math.max(24, mainSize.height * 0.5 - 180);
   const nextWordLabelLength = Array.from(nextWordLabel).length;
-  const nextWordPanel = {
-    x: uiGroupLeft,
-    y: uiGroupTop,
-    width: 80,
-    collapsedHeight: 42,
-    expandedHeight: Math.max(132, Math.min(260, 56 + nextWordLabelLength * 18)),
-  };
-  const currentWordPanel = {
-    x: uiGroupLeft + nextWordPanel.width + 24,
-    y: uiGroupTop,
-    width: 300,
-    height: 360,
-  };
+  const infoUi = useMemo(
+    () => getExplorationInfoUiLayout(mainSize.width, mainSize.height, nextWordLabelLength),
+    [mainSize.width, mainSize.height, nextWordLabelLength],
+  );
+  const { nextWordPanel, currentWordPanel } = infoUi;
   const showHoverGuide =
     isExplorationMode &&
     isInfoPanelVisible &&
@@ -226,8 +272,10 @@ function App() {
     mainSize.width > 0 &&
     mainSize.height > 0;
 
+  const backgroundColors = getBackgroundThemeColors(backgroundTheme);
+
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', color: '#fff', backgroundColor: '#0b0c10', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', color: backgroundColors.uiText, backgroundColor: backgroundColors.shell, overflow: 'hidden' }}>
       <style>
         {`
           @keyframes nextWordArrowPulse {
@@ -255,12 +303,65 @@ function App() {
           plots={displayPlots}
           selectedId={selectedId}
           explorationMode={isExplorationMode}
+          flowLabelExpiresAt={flowLabelExpiresAt}
+          flowLabelNow={flowLabelNow}
+          plotLabelDisplayMode={plotLabelDisplayMode}
+          backgroundTheme={backgroundTheme}
           onSelectedScreenPosition={handleSelectedScreenPosition}
           onHoveredWordChange={handleHoveredWordChange}
           onHoveredWarpGateChange={handleHoveredWarpGateChange}
           onHoveredScreenPosition={handleHoveredScreenPosition}
           onWordSelect={handleWordSelect}
         />
+
+        {isExplorationMode && (
+          <div
+            style={{
+              position: 'absolute',
+              right: '16px',
+              bottom: '16px',
+              zIndex: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+            }}
+          >
+            <button
+              type="button"
+              onClick={toggleBackgroundTheme}
+              style={{
+                padding: '8px 12px',
+                border: `1px solid ${backgroundColors.controlBorder}`,
+                borderRadius: '8px',
+                backgroundColor: backgroundColors.controlBackground,
+                color: backgroundColors.controlText,
+                fontSize: '0.78rem',
+                letterSpacing: '0.06em',
+                cursor: 'pointer',
+                backdropFilter: 'blur(10px)',
+              }}
+            >
+              背景: {backgroundTheme === 'dark' ? '黒' : '薄灰'}（B）
+            </button>
+            <button
+              type="button"
+              onClick={togglePlotLabelDisplayMode}
+              style={{
+                padding: '8px 12px',
+                border: `1px solid ${backgroundColors.controlBorder}`,
+                borderRadius: '8px',
+                backgroundColor: backgroundColors.controlBackground,
+                color: backgroundColors.controlText,
+                fontSize: '0.78rem',
+                letterSpacing: '0.06em',
+                cursor: 'pointer',
+                backdropFilter: 'blur(10px)',
+              }}
+            >
+              ラベル: {plotLabelDisplayMode === 'nearby' ? '常時' : 'フロー'}（L）
+            </button>
+          </div>
+        )}
 
         {(showInfoGuideLine || showHoverGuide) && (
           <svg
@@ -291,8 +392,8 @@ function App() {
               <line
                 x1={hoveredScreenPoint.x}
                 y1={hoveredScreenPoint.y}
-                x2={nextWordPanel.x + nextWordPanel.width - 12}
-                y2={nextWordPanel.y + 22}
+                x2={nextWordPanel.x + nextWordPanel.guideAnchorX}
+                y2={nextWordPanel.y + nextWordPanel.guideAnchorY}
                 stroke="rgba(244, 236, 247, 0.44)"
                 strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
@@ -305,15 +406,15 @@ function App() {
           <div
             style={{
               position: 'absolute',
-              left: `${uiGroupLeftPercent}%`,
+              left: `${nextWordPanel.x}px`,
               top: `${nextWordPanel.y}px`,
               zIndex: 2,
               width: `${nextWordPanel.width}px`,
               height: `${nextWordLabel ? nextWordPanel.expandedHeight : nextWordPanel.collapsedHeight}px`,
-              padding: '10px',
+              padding: `${nextWordPanel.padding}px`,
               border: '1px solid rgba(195, 155, 211, 0.32)',
               borderLeft: '3px solid rgba(195, 155, 211, 0.62)',
-              borderRadius: '12px',
+              borderRadius: `${nextWordPanel.borderRadius}px`,
               backgroundColor: 'rgba(12, 10, 16, 0.88)',
               boxShadow: '0 18px 40px rgba(0, 0, 0, 0.34), inset 8px 0 18px rgba(255, 255, 255, 0.03)',
               backdropFilter: 'blur(12px)',
@@ -324,12 +425,12 @@ function App() {
               pointerEvents: 'none',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '22px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: `${nextWordPanel.headerGap}px`, height: `${nextWordPanel.headerHeight}px` }}>
               <div
                 style={{
                   flex: 1,
                   minWidth: 0,
-                  height: '18px',
+                  height: `${nextWordPanel.tickerHeight}px`,
                   overflow: 'hidden',
                   position: 'relative',
                 }}
@@ -340,9 +441,9 @@ function App() {
                     left: 0,
                     top: 0,
                     margin: 0,
-                    fontSize: '0.72rem',
+                    fontSize: nextWordPanel.tickerFontSize,
                     letterSpacing: '0.14em',
-                    lineHeight: '18px',
+                    lineHeight: `${nextWordPanel.tickerHeight}px`,
                     color: '#c39bd3',
                     whiteSpace: 'nowrap',
                     animation: 'nextWordTicker 3.8s linear infinite',
@@ -356,9 +457,9 @@ function App() {
                   display: 'block',
                   width: 0,
                   height: 0,
-                  borderTop: '5px solid transparent',
-                  borderBottom: '5px solid transparent',
-                  borderRight: '9px solid #c39bd3',
+                  borderTop: `${nextWordPanel.arrowBorderY}px solid transparent`,
+                  borderBottom: `${nextWordPanel.arrowBorderY}px solid transparent`,
+                  borderRight: `${nextWordPanel.arrowBorderX}px solid #c39bd3`,
                   opacity: nextWordLabel ? 1 : 0.45,
                   animation: nextWordLabel ? 'nextWordArrowPulse 900ms ease-in-out infinite' : 'none',
                   transition: 'opacity 160ms ease',
@@ -369,11 +470,11 @@ function App() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 18px',
-                gap: '12px',
+                gridTemplateColumns: `1fr ${nextWordPanel.tickerHeight}px`,
+                gap: `${nextWordPanel.contentGap}px`,
                 alignItems: 'start',
                 justifyItems: 'center',
-                marginTop: '14px',
+                marginTop: `${nextWordPanel.contentMarginTop}px`,
                 opacity: nextWordLabel ? 1 : 0,
                 transform: nextWordLabel ? 'translateY(0)' : 'translateY(-6px)',
                 transition: 'opacity 140ms ease, transform 160ms ease',
@@ -383,13 +484,13 @@ function App() {
                 style={{
                   writingMode: 'vertical-rl',
                   textOrientation: 'mixed',
-                  fontSize: '1.02rem',
+                  fontSize: nextWordPanel.wordFontSize,
                   fontWeight: 700,
                   lineHeight: 1.25,
                   letterSpacing: '0.06em',
                   color: '#f4ecf7',
                   overflow: 'hidden',
-                  maxHeight: `${nextWordPanel.expandedHeight - 52}px`,
+                  maxHeight: `${nextWordPanel.contentMaxHeight}px`,
                 }}
               >
                 {nextWordLabel}
@@ -399,7 +500,7 @@ function App() {
                   writingMode: 'vertical-rl',
                   textOrientation: 'mixed',
                   margin: 0,
-                  fontSize: '0.68rem',
+                  fontSize: nextWordPanel.subLabelFontSize,
                   letterSpacing: '0.12em',
                   lineHeight: 1.2,
                   color: '#c39bd3',
@@ -450,14 +551,14 @@ function App() {
             style={{
               position: 'absolute',
               top: `${currentWordPanel.y}px`,
-              left: `calc(${uiGroupLeftPercent}% + ${nextWordPanel.width + 24}px)`,
-              width: '300px',
-              minHeight: '360px',
+              left: `${currentWordPanel.x}px`,
+              width: `${currentWordPanel.width}px`,
+              minHeight: `${currentWordPanel.height}px`,
               zIndex: 2,
-              padding: '18px 16px',
+              padding: `${currentWordPanel.paddingY}px ${currentWordPanel.paddingX}px`,
               border: '1px solid rgba(214, 187, 226, 0.36)',
               borderLeft: '4px solid rgba(195, 155, 211, 0.72)',
-              borderRadius: '10px',
+              borderRadius: `${currentWordPanel.borderRadius}px`,
               backgroundColor: 'rgba(12, 10, 16, 0.9)',
               boxShadow: '0 18px 40px rgba(0, 0, 0, 0.38), inset 10px 0 24px rgba(255, 255, 255, 0.035)',
               backdropFilter: 'blur(12px)',
@@ -473,9 +574,9 @@ function App() {
                 flexDirection: 'row-reverse',
                 alignItems: 'stretch',
                 justifyContent: 'flex-start',
-                gap: '18px',
+                gap: `${currentWordPanel.gap}px`,
                 height: '100%',
-                minHeight: '324px',
+                minHeight: `${currentWordPanel.innerMinHeight}px`,
               }}
             >
               <div
@@ -483,8 +584,8 @@ function App() {
                   display: 'flex',
                   flexDirection: 'row-reverse',
                   alignItems: 'flex-start',
-                  gap: '12px',
-                  paddingLeft: '14px',
+                  gap: `${currentWordPanel.innerGap}px`,
+                  paddingLeft: `${currentWordPanel.paddingLeft}px`,
                   borderLeft: '1px solid rgba(255, 255, 255, 0.12)',
                 }}
               >
@@ -493,7 +594,7 @@ function App() {
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '10px',
+                    gap: `${currentWordPanel.innerGap}px`,
                   }}
                 >
                   <span
@@ -501,9 +602,9 @@ function App() {
                       display: 'block',
                       width: 0,
                       height: 0,
-                      borderLeft: '5px solid transparent',
-                      borderRight: '5px solid transparent',
-                      borderTop: '9px solid #c39bd3',
+                      borderLeft: `${currentWordPanel.arrowBorder}px solid transparent`,
+                      borderRight: `${currentWordPanel.arrowBorder}px solid transparent`,
+                      borderTop: `${currentWordPanel.arrowBorder + 4}px solid #c39bd3`,
                       animation: 'currentWordArrowPulse 900ms ease-in-out infinite',
                     }}
                   />
@@ -512,7 +613,7 @@ function App() {
                       writingMode: 'vertical-rl',
                       textOrientation: 'mixed',
                       margin: 0,
-                      fontSize: '0.68rem',
+                      fontSize: currentWordPanel.sectionLabelFontSize,
                       letterSpacing: '0.18em',
                       color: '#c39bd3',
                     }}
@@ -525,15 +626,15 @@ function App() {
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '10px',
-                    width: '50px',
+                    gap: `${currentWordPanel.innerGap}px`,
+                    width: `${currentWordPanel.wordColumnWidth}px`,
                     overflow: 'hidden',
                   }}
                 >
                   <div
                     style={{
-                      width: '50px',
-                      height: '18px',
+                      width: `${currentWordPanel.wordColumnWidth}px`,
+                      height: `${currentWordPanel.tickerHeight}px`,
                       overflow: 'hidden',
                       position: 'relative',
                     }}
@@ -544,9 +645,9 @@ function App() {
                         left: 0,
                         top: 0,
                         margin: 0,
-                        fontSize: '0.68rem',
+                        fontSize: currentWordPanel.tickerFontSize,
                         letterSpacing: '0.14em',
-                        lineHeight: '18px',
+                        lineHeight: `${currentWordPanel.tickerHeight}px`,
                         color: '#c39bd3',
                         whiteSpace: 'nowrap',
                         animation: 'nextWordTicker 4.2s linear infinite',
@@ -560,7 +661,7 @@ function App() {
                       writingMode: 'vertical-rl',
                       textOrientation: 'mixed',
                       margin: 0,
-                      fontSize: '2.25rem',
+                      fontSize: currentWordPanel.wordFontSize,
                       lineHeight: 1.25,
                       letterSpacing: '0.08em',
                     }}
@@ -575,8 +676,8 @@ function App() {
                   writingMode: 'vertical-rl',
                   textOrientation: 'mixed',
                   margin: 0,
-                  maxHeight: '320px',
-                  fontSize: '0.92rem',
+                  maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
+                  fontSize: currentWordPanel.bodyFontSize,
                   lineHeight: 1.9,
                   letterSpacing: '0.06em',
                   color: '#d8c7df',
@@ -592,11 +693,11 @@ function App() {
                   display: 'grid',
                   gridAutoFlow: 'column',
                   gridTemplateRows: 'auto auto',
-                  columnGap: '14px',
-                  rowGap: '8px',
+                  columnGap: `${currentWordPanel.columnGap}px`,
+                  rowGap: `${currentWordPanel.rowGap}px`,
                   margin: 0,
                   padding: '2px 0',
-                  fontSize: '0.84rem',
+                  fontSize: currentWordPanel.dlFontSize,
                 }}
               >
                 <dt style={{ color: '#9f8aaa' }}>主感情</dt>
@@ -617,7 +718,7 @@ function App() {
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'flex-end',
-                  gap: '10px',
+                  gap: `${currentWordPanel.innerGap}px`,
                   paddingRight: '2px',
                 }}
               >
@@ -625,7 +726,7 @@ function App() {
                   style={{
                     writingMode: 'vertical-rl',
                     margin: 0,
-                    fontSize: '0.68rem',
+                    fontSize: currentWordPanel.metaFontSize,
                     letterSpacing: '0.14em',
                     color: '#9f8aaa',
                   }}
@@ -634,8 +735,8 @@ function App() {
                 </p>
                 <div
                   style={{
-                    width: '8px',
-                    height: '160px',
+                    width: `${currentWordPanel.intensityBarWidth}px`,
+                    height: `${currentWordPanel.intensityBarHeight}px`,
                     overflow: 'hidden',
                     borderRadius: '999px',
                     backgroundColor: 'rgba(255, 255, 255, 0.12)',

@@ -119,7 +119,7 @@ export function getEmotionPlotPosition(
   const len = Math.hypot(dx, dy, dz) || 1;
 
   const intensityT = Math.min(params.intensity, MIXED_INTENSITY_POSITION_MAX) / MIXED_INTENSITY_POSITION_MAX;
-  const minDist = sphereRadius * 0.56;
+  const minDist = sphereRadius * 0.52;
   const maxDist = sphereRadius * 1.46;
   const dist = minDist + intensityT * (maxDist - minDist);
 

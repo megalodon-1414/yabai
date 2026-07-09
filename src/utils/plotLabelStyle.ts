@@ -1,15 +1,45 @@
 import { SELECTED_PLOT_SCALE } from './plotSelectionStyle';
 import type { UserPlotRow } from '../types/userPlot';
-import { EMOTION_INTENSITY_MAX, isPurePlot } from '../utils/emotionPlotBridge';
+import { EMOTION_INTENSITY_MAX } from '../utils/emotionPlotBridge';
 
-const MIN_FONT_SIZE = 4;
-const MAX_FONT_SIZE = 9;
-const FONT_SIZE_RATIO = 0.017;
+const MIN_FONT_SIZE = 3;
+const MAX_FONT_SIZE = 7;
+const FONT_SIZE_RATIO = 0.013;
 const DISTANCE_FACTOR_RATIO = 0.5;
-const FONT_WEIGHT_MIN = 200;
-const FONT_WEIGHT_MAX = 900;
-const FONT_WIDTH_MIN = 50;
-const FONT_WIDTH_MAX = 150;
+const FONT_WEIGHT_MIN = 400;
+const FONT_WEIGHT_MAX = 700;
+
+export type PlotLabelDisplayMode = 'flow' | 'nearby';
+
+export const FLOW_LABEL_DURATION_MS = 3000;
+const FLOW_LABEL_FADE_IN_MS = 350;
+const FLOW_LABEL_FADE_OUT_MS = 500;
+
+function easeFade(progress: number): number {
+  const t = Math.max(0, Math.min(1, progress));
+  return t * t * (3 - 2 * t);
+}
+
+export function getFlowLabelFadeFactor(
+  expiresAt: number,
+  now: number,
+  durationMs = FLOW_LABEL_DURATION_MS,
+): number {
+  const startedAt = expiresAt - durationMs;
+  const elapsed = now - startedAt;
+  const remaining = expiresAt - now;
+
+  if (remaining <= 0 || elapsed < 0) {
+    return 0;
+  }
+  if (elapsed < FLOW_LABEL_FADE_IN_MS) {
+    return easeFade(elapsed / FLOW_LABEL_FADE_IN_MS);
+  }
+  if (remaining < FLOW_LABEL_FADE_OUT_MS) {
+    return easeFade(remaining / FLOW_LABEL_FADE_OUT_MS);
+  }
+  return 1;
+}
 
 export interface PlotLabelStyle {
   fontSize: string;
@@ -19,7 +49,6 @@ export interface PlotLabelStyle {
 
 export interface PlotLabelTypography {
   fontWeight: number;
-  fontVariationSettings: string;
 }
 
 export function getPlotLabelStyle(
@@ -33,7 +62,7 @@ export function getPlotLabelStyle(
     Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, minDim * FONT_SIZE_RATIO)),
   );
   const fontSize = isSelected ? Math.round(baseFontSize * selectedScale) : baseFontSize;
-  const sphereGap = Math.round(baseFontSize * 0.4 + 4);
+  const sphereGap = Math.round(baseFontSize * 0.7 + 10);
   const screenOffsetY = isSelected ? Math.round(sphereGap * selectedScale) : sphereGap;
 
   return {
@@ -44,21 +73,16 @@ export function getPlotLabelStyle(
 }
 
 export function getPlotLabelTypography(plot: UserPlotRow, isSelected: boolean): PlotLabelTypography {
-  const pure = isPurePlot(plot);
   const intensityNorm = plot.intensity / EMOTION_INTENSITY_MAX;
-  const selectedWeightBoost = isSelected ? 80 : 0;
+  const selectedWeightBoost = isSelected ? 100 : 0;
   const fontWeight = Math.round(
     Math.min(
       FONT_WEIGHT_MAX,
       FONT_WEIGHT_MIN + intensityNorm * (FONT_WEIGHT_MAX - FONT_WEIGHT_MIN) + selectedWeightBoost,
     ),
   );
-  const fontWidth = Math.round(
-    pure ? FONT_WIDTH_MIN + 20 : FONT_WIDTH_MIN + intensityNorm * (FONT_WIDTH_MAX - FONT_WIDTH_MIN),
-  );
 
   return {
     fontWeight,
-    fontVariationSettings: `"ital" 0, "wdth" ${fontWidth}, "wght" ${fontWeight}`,
   };
 }

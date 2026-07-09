@@ -14,7 +14,7 @@ import {
   type PlotOrbitOverride,
 } from '../utils/plotFromUserPlot';
 import { SELECTED_PLOT_SCALE } from '../utils/plotSelectionStyle';
-import { getPlotLabelStyle, getPlotLabelTypography } from '../utils/plotLabelStyle';
+import { getPlotLabelStyle, getPlotLabelTypography, FLOW_LABEL_DURATION_MS, getFlowLabelFadeFactor, type PlotLabelDisplayMode } from '../utils/plotLabelStyle';
 import { OrbitTrail } from './OrbitTrail';
 
 const VISIBILITY_LERP_SPEED = 6;
@@ -27,6 +27,9 @@ interface WordPlotProps {
   isSelected: boolean;
   isNearbyVisible: boolean;
   explorationMode?: boolean;
+  flowLabelExpiresAt?: Readonly<Record<string, number>>;
+  flowLabelNow?: number;
+  plotLabelDisplayMode?: PlotLabelDisplayMode;
   orbitOverride?: PlotOrbitOverride;
   orbitTimeScale?: number;
   onHoverChange?: (wordId: string | null) => void;
@@ -38,6 +41,9 @@ export function WordPlot({
   isSelected,
   isNearbyVisible,
   explorationMode = false,
+  flowLabelExpiresAt,
+  flowLabelNow = 0,
+  plotLabelDisplayMode = 'flow',
   orbitOverride,
   orbitTimeScale = 1,
   onHoverChange,
@@ -62,7 +68,11 @@ export function WordPlot({
   const isOrbiting = isPureEmotionPlot(plot);
 
   const selectedScale = explorationMode && isSelected ? 1 : SELECTED_PLOT_SCALE;
-  const showLabel = !explorationMode;
+  const flowExpiresAt = flowLabelExpiresAt?.[plot.word_id];
+  const isFlowLabelActive = flowExpiresAt !== undefined && flowExpiresAt > flowLabelNow;
+  const showLabel = !explorationMode
+    || (plotLabelDisplayMode === 'nearby' && isNearbyVisible)
+    || (plotLabelDisplayMode === 'flow' && (isSelected || isFlowLabelActive));
   const isDistantExplorationPlot = explorationMode && !isNearbyVisible && !isSelected;
   const isSelectable = !explorationMode || isNearbyVisible || isSelected;
 
@@ -175,10 +185,14 @@ export function WordPlot({
       if (!showLabel) {
         labelRef.current.style.opacity = '0';
       } else {
-        const labelOpacity = labelAppearance.opacity * visibilityFactor;
+        const flowFadeFactor = plotLabelDisplayMode === 'flow' && !isSelected && explorationMode && flowExpiresAt
+          ? getFlowLabelFadeFactor(flowExpiresAt, Date.now(), FLOW_LABEL_DURATION_MS)
+          : 1;
+        const labelOpacity = labelAppearance.opacity * visibilityFactor * flowFadeFactor;
+        const shadowStrength = 0.15 + labelAppearance.opacity * 0.85;
+
         labelRef.current.style.opacity = String(labelOpacity);
         labelRef.current.style.color = labelAppearance.color.getStyle();
-        const shadowStrength = 0.15 + labelAppearance.opacity * 0.85;
         labelRef.current.style.textShadow = `0 0 ${8 * shadowStrength}px rgba(0,0,0,${0.9 * shadowStrength})`;
       }
     }
@@ -250,14 +264,11 @@ export function WordPlot({
             <div
               ref={labelRef}
               style={{
-                color,
                 fontSize: labelStyle.fontSize,
                 fontWeight: labelTypography.fontWeight,
-                fontVariationSettings: labelTypography.fontVariationSettings,
                 writingMode: 'vertical-rl',
                 textOrientation: 'upright',
                 fontFamily: 'var(--font-family-app)',
-                textShadow: '0 0 8px rgba(0,0,0,0.9)',
                 transform: `translateY(calc(50% + ${labelStyle.screenOffsetY}px))`,
               }}
             >

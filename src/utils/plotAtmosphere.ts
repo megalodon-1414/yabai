@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 
-const FOG_COLOR = new THREE.Color('#030508');
+const atmosphereFogColor = new THREE.Color('#030508');
+
+export function setAtmosphereFogColor(hex: string): void {
+  atmosphereFogColor.set(hex);
+}
 export const ATMOSPHERE_NEAR_DISTANCE = 4;
 export const ATMOSPHERE_FAR_DISTANCE = 18;
 export const ATMOSPHERE_MIN_OPACITY = 0.22;
@@ -35,7 +39,7 @@ export function getAtmosphericAppearance(
   const opacity = THREE.MathUtils.lerp(1, minOpacity, fade);
   const colorMix = fade * (isSelected ? MAX_COLOR_MIX * 0.45 : MAX_COLOR_MIX);
 
-  target.copy(baseColor).lerp(FOG_COLOR, colorMix);
+  target.copy(baseColor).lerp(atmosphereFogColor, colorMix);
 
   return { opacity, color: target };
 }
@@ -60,7 +64,7 @@ export function getPlotPointAppearance(
     fade,
   );
 
-  target.copy(baseColor).lerp(FOG_COLOR, colorMix);
+  target.copy(baseColor).lerp(atmosphereFogColor, colorMix);
 
   return { opacity, color: target, emissiveIntensity };
 }

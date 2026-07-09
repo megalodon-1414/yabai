@@ -11,7 +11,11 @@ import {
   plotPositionFromRow,
   type PlotOrbitOverride,
 } from '../utils/plotFromUserPlot';
+import type { AppBackgroundTheme } from '../utils/appBackgroundTheme';
+import { getBackgroundThemeColors } from '../utils/appBackgroundTheme';
+import type { PlotLabelDisplayMode } from '../utils/plotLabelStyle';
 import { applySelectionViewOffset, clearSelectionViewOffset } from '../utils/cameraFocus';
+import { setAtmosphereFogColor } from '../utils/plotAtmosphere';
 import { getPrimaryEmotionColor, rowToEmotionParams } from '../utils/emotionPlotBridge';
 import {
   EXPLORATION_CAMERA_DISTANCE,
@@ -37,7 +41,6 @@ const TARGET_LERP_SPEED = 6;
 const TARGET_ARRIVAL_THRESHOLD = 0.2;
 const ROTATION_SPEED = 0.006;
 const WHEEL_ZOOM_SPEED = 0.0015;
-const EXPLORATION_ORBIT_SCREEN_ANCHOR = { x: 0.24, y: 0.5 };
 const EXPLORATION_ORBIT_CAMERA_DISTANCE = 1.3;
 const EXPLORATION_MIXED_ORBIT_CAMERA_DISTANCE = 0.68;
 const SELECTED_ORBIT_TIME_SCALE = 0.18;
@@ -56,6 +59,10 @@ interface SpaceCanvasProps {
   plots: UserPlotRow[];
   selectedId: string | null;
   explorationMode?: boolean;
+  flowLabelExpiresAt?: Readonly<Record<string, number>>;
+  flowLabelNow?: number;
+  plotLabelDisplayMode?: PlotLabelDisplayMode;
+  backgroundTheme?: AppBackgroundTheme;
   onSelectedScreenPosition?: (point: { x: number; y: number; visible: boolean } | null) => void;
   onHoveredWordChange?: (wordId: string | null) => void;
   onHoveredWarpGateChange?: (label: string | null) => void;
@@ -371,6 +378,10 @@ export function SpaceCanvas({
   plots,
   selectedId,
   explorationMode = false,
+  flowLabelExpiresAt,
+  flowLabelNow = 0,
+  plotLabelDisplayMode = 'flow',
+  backgroundTheme = 'dark',
   onSelectedScreenPosition,
   onHoveredWordChange,
   onHoveredWarpGateChange,
@@ -604,8 +615,14 @@ export function SpaceCanvas({
     }
   }, [selectedId]);
 
+  const backgroundColors = getBackgroundThemeColors(backgroundTheme);
+
+  useEffect(() => {
+    setAtmosphereFogColor(backgroundColors.canvas);
+  }, [backgroundColors.canvas]);
+
   return (
-    <div style={{ width: '100%', height: '100%', backgroundColor: '#030508', position: 'relative' }}>
+    <div style={{ width: '100%', height: '100%', backgroundColor: backgroundColors.canvas, position: 'relative' }}>
       {!explorationMode && (
         <button
           type="button"
@@ -636,7 +653,7 @@ export function SpaceCanvas({
         dpr={explorationMode ? [1, 1.25] : [1, 2]}
         style={{ width: '100%', height: '100%' }}
       >
-        <color attach="background" args={['#030508']} />
+        <color attach="background" args={[backgroundColors.canvas]} />
         <ambientLight intensity={0.4} />
         <pointLight position={[10, 10, 10]} intensity={0.8} />
 
@@ -645,7 +662,7 @@ export function SpaceCanvas({
           cameraTarget={cameraTarget}
           focusOnSelection={isExplorationFocused || (!explorationMode && !isDefaultView && selectedId !== null)}
           explorationFocus={isExplorationFocused}
-          explorationAnchor={isSelectedOrbitingPlot ? EXPLORATION_ORBIT_SCREEN_ANCHOR : EXPLORATION_SCREEN_ANCHOR}
+          explorationAnchor={EXPLORATION_SCREEN_ANCHOR}
           explorationDistance={
             isSelectedOrbitingPlot
               ? EXPLORATION_ORBIT_CAMERA_DISTANCE
@@ -721,6 +738,9 @@ export function SpaceCanvas({
               isSelected={plot.word_id === selectedId}
               isNearbyVisible={!nearbyPlotIds || nearbyPlotIds.has(plot.word_id)}
               explorationMode={explorationMode}
+              flowLabelExpiresAt={flowLabelExpiresAt}
+              flowLabelNow={flowLabelNow}
+              plotLabelDisplayMode={plotLabelDisplayMode}
               orbitOverride={mixedOrbitOverrides.get(plot.word_id)}
               orbitTimeScale={getOrbitTimeScale(plot)}
               onHoverChange={handleWordHover}

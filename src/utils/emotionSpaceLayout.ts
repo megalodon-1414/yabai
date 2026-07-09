@@ -7,7 +7,7 @@ export const RING_RADIUS = 7.5;
 export const Y_LAYER_OFFSET = 5.6;
 export const EMOTION_SPHERE_RADIUS = 1.45;
 export const DYAD_SPHERE_RADIUS = 0.9;
-export const PURE_AREA_RATIO = 0.46;
+export const PURE_AREA_RATIO = 0.5;
 
 export function getEmotionSphereRadius(id: EmotionId): number {
   return isBasicEmotionId(id) ? EMOTION_SPHERE_RADIUS : DYAD_SPHERE_RADIUS;
