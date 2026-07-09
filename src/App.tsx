@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SpaceCanvas } from './components/SpaceCanvas';
+import { EmotionMinimap } from './components/EmotionMinimap';
 import { WordEditor } from './components/WordEditor';
 import { getEmotionById } from './data/emotions';
 import { usePlotSubmit } from './hooks/usePlotSubmit';
@@ -16,6 +17,7 @@ import { pickRandomPlotId } from './utils/explorationMode';
 import { getBackgroundThemeColors, type AppBackgroundTheme } from './utils/appBackgroundTheme';
 import { FLOW_LABEL_DURATION_MS, type PlotLabelDisplayMode } from './utils/plotLabelStyle';
 import { getExplorationInfoUiLayout } from './utils/explorationInfoUiLayout';
+import type { MinimapSyncState } from './utils/emotionMinimapLayout';
 import { mergeWithSeedPlots } from './utils/seedPlots';
 
 function App() {
@@ -34,6 +36,7 @@ function App() {
   const [isEditorOpen, setIsEditorOpen] = useState(true);
   const [plotLabelDisplayMode, setPlotLabelDisplayMode] = useState<PlotLabelDisplayMode>('flow');
   const [backgroundTheme, setBackgroundTheme] = useState<AppBackgroundTheme>('dark');
+  const [minimapSync, setMinimapSync] = useState<MinimapSyncState | null>(null);
   const [isExplorationMode] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -225,6 +228,10 @@ function App() {
     [],
   );
 
+  const handleMinimapSync = useCallback((state: MinimapSyncState | null) => {
+    setMinimapSync(state);
+  }, []);
+
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       setFlowLabelNow(Date.now());
@@ -311,8 +318,13 @@ function App() {
           onHoveredWordChange={handleHoveredWordChange}
           onHoveredWarpGateChange={handleHoveredWarpGateChange}
           onHoveredScreenPosition={handleHoveredScreenPosition}
+          onMinimapSync={handleMinimapSync}
           onWordSelect={handleWordSelect}
         />
+
+        {isExplorationMode && (
+          <EmotionMinimap syncState={minimapSync} backgroundTheme={backgroundTheme} />
+        )}
 
         {isExplorationMode && (
           <div

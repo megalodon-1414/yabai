@@ -23,6 +23,7 @@ import {
   EXPLORATION_SCREEN_ANCHOR,
 } from '../utils/explorationMode';
 import { getEmotionCenter } from '../utils/emotionSpaceLayout';
+import type { MinimapSyncState } from '../utils/emotionMinimapLayout';
 import { EmotionSpaceAreas } from './EmotionSpaceAreas';
 import { ExplorationDistantPlotCloud } from './ExplorationDistantPlotCloud';
 import { GravityAttractionParticles } from './GravityAttractionParticles';
@@ -67,6 +68,7 @@ interface SpaceCanvasProps {
   onHoveredWordChange?: (wordId: string | null) => void;
   onHoveredWarpGateChange?: (label: string | null) => void;
   onHoveredScreenPosition?: (point: { x: number; y: number; visible: boolean } | null) => void;
+  onMinimapSync?: (state: MinimapSyncState | null) => void;
   onWordSelect: (id: string) => void;
 }
 
@@ -77,6 +79,7 @@ interface CameraControlsProps {
   explorationFocus?: boolean;
   explorationAnchor?: { x: number; y: number };
   explorationDistance?: number;
+  onCameraStateChange?: (state: Pick<MinimapSyncState, 'cameraPosition' | 'cameraTarget' | 'cameraUp'>) => void;
 }
 
 function CameraControls({
@@ -86,6 +89,7 @@ function CameraControls({
   explorationFocus = false,
   explorationAnchor = EXPLORATION_SCREEN_ANCHOR,
   explorationDistance = EXPLORATION_CAMERA_DISTANCE,
+  onCameraStateChange,
 }: CameraControlsProps) {
   const { camera, gl, size } = useThree();
   const baseTarget = useRef(new THREE.Vector3(...DEFAULT_CAMERA_TARGET));
@@ -101,6 +105,8 @@ function CameraControls({
   const dragState = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const focusPhase = useRef<FocusPhase>('idle');
   const prevFocusOnSelection = useRef(focusOnSelection);
+  const frameCounter = useRef(0);
+  const lastCameraState = useRef<Pick<MinimapSyncState, 'cameraPosition' | 'cameraTarget' | 'cameraUp'> | null>(null);
 
   const focusDistance = explorationFocus ? explorationDistance : SELECTION_CAMERA_DISTANCE;
   const screenAnchor = explorationFocus ? explorationAnchor : undefined;
@@ -299,6 +305,23 @@ function CameraControls({
     }
 
     camera.lookAt(smoothTarget.current);
+
+    if (onCameraStateChange) {
+      frameCounter.current = (frameCounter.current + 1) % 2;
+      if (frameCounter.current === 0) {
+        const next = {
+          cameraPosition: [camera.position.x, camera.position.y, camera.position.z] as [number, number, number],
+          cameraTarget: [smoothTarget.current.x, smoothTarget.current.y, smoothTarget.current.z] as [
+            number,
+            number,
+            number,
+          ],
+          cameraUp: [camera.up.x, camera.up.y, camera.up.z] as [number, number, number],
+        };
+        lastCameraState.current = next;
+        onCameraStateChange(next);
+      }
+    }
   });
   useEffect(() => {
     if (resetCount === 0) return;
@@ -374,6 +397,52 @@ function SelectedScreenPointTracker({
   return null;
 }
 
+interface MinimapFocusTrackerProps {
+  plot: UserPlotRow | null;
+  active: boolean;
+  orbitOverride?: PlotOrbitOverride;
+  orbitTimeScale?: number;
+  cameraState: Pick<MinimapSyncState, 'cameraPosition' | 'cameraTarget' | 'cameraUp'> | null;
+  onChange?: (state: MinimapSyncState | null) => void;
+}
+
+function MinimapFocusTracker({
+  plot,
+  active,
+  orbitOverride,
+  orbitTimeScale = 1,
+  cameraState,
+  onChange,
+}: MinimapFocusTrackerProps) {
+  const frameCounter = useRef(0);
+
+  useEffect(() => {
+    if (!active || !plot || !cameraState) {
+      onChange?.(null);
+    }
+  }, [active, plot, cameraState, onChange]);
+
+  useFrame((state) => {
+    if (!active || !plot || !cameraState || !onChange) return;
+
+    frameCounter.current = (frameCounter.current + 1) % 2;
+    if (frameCounter.current !== 0) return;
+
+    const focusPosition = plotPositionFromRow(
+      plot,
+      state.clock.elapsedTime * orbitTimeScale,
+      orbitOverride,
+    ) as [number, number, number];
+
+    onChange({
+      ...cameraState,
+      focusPosition,
+    });
+  });
+
+  return null;
+}
+
 export function SpaceCanvas({
   plots,
   selectedId,
@@ -386,9 +455,14 @@ export function SpaceCanvas({
   onHoveredWordChange,
   onHoveredWarpGateChange,
   onHoveredScreenPosition,
+  onMinimapSync,
   onWordSelect,
 }: SpaceCanvasProps) {
   const [resetCount, setResetCount] = useState(0);
+  const [cameraState, setCameraState] = useState<Pick<
+    MinimapSyncState,
+    'cameraPosition' | 'cameraTarget' | 'cameraUp'
+  > | null>(null);
   const [isDefaultView, setIsDefaultView] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const selectedPlot = useMemo(
@@ -609,6 +683,20 @@ export function SpaceCanvas({
     onHoveredWordChange?.(id);
   };
 
+  const handleCameraStateChange = useCallback(
+    (state: Pick<MinimapSyncState, 'cameraPosition' | 'cameraTarget' | 'cameraUp'>) => {
+      setCameraState(state);
+    },
+    [],
+  );
+
+  const handleMinimapSync = useCallback(
+    (state: MinimapSyncState | null) => {
+      onMinimapSync?.(state);
+    },
+    [onMinimapSync],
+  );
+
   useEffect(() => {
     if (selectedId) {
       setIsDefaultView(false);
@@ -670,6 +758,15 @@ export function SpaceCanvas({
                 ? EXPLORATION_MIXED_ORBIT_CAMERA_DISTANCE
                 : EXPLORATION_CAMERA_DISTANCE
           }
+          onCameraStateChange={handleCameraStateChange}
+        />
+        <MinimapFocusTracker
+          plot={selectedPlot}
+          active={!isDefaultView && selectedPlot !== null}
+          orbitOverride={selectedPlot ? mixedOrbitOverrides.get(selectedPlot.word_id) : undefined}
+          orbitTimeScale={getOrbitTimeScale(selectedPlot)}
+          cameraState={cameraState}
+          onChange={handleMinimapSync}
         />
         <SelectedScreenPointTracker
           plot={selectedPlot}
