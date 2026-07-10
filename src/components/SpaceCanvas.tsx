@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { getBasicEmotion } from '../data/emotions';
+import { getEmotionById } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import {
   createMixedPlotOrbitOverrides,
@@ -813,7 +813,7 @@ export function SpaceCanvas({
               orbitOverride={entry.orbitOverride}
               sourceOverride={entry.sourceOverride}
               color={getPrimaryEmotionColor(entry.plot.secondaryId)}
-              hoverLabel={`to${getBasicEmotion(entry.plot.secondaryId).label}空間`}
+              hoverLabel={`to${getEmotionById(entry.plot.secondaryId).label}空間`}
               active={entry.active && warpGateTargets.length > 0}
               onWarp={handleWarpGateSelect}
               onHoverLabelChange={onHoveredWarpGateChange}

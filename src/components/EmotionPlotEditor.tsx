@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { BasicEmotionId, EmotionId } from '../data/emotions';
+import type { EmotionId } from '../data/emotions';
 import { BASIC_EMOTIONS, DYAD_EMOTIONS, getEmotionById, isBasicEmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import { EMOTION_INTENSITY_MAX, clampIntensity, isPurePlot, normalizeUserPlotRow } from '../utils/emotionPlotBridge';
@@ -23,11 +23,8 @@ const selectStyle: CSSProperties = {
 function handlePrimaryChange(plot: UserPlotRow, primaryId: EmotionId): UserPlotRow {
   let secondaryId = plot.secondaryId;
 
-  if (isBasicEmotionId(primaryId)) {
-    if (!isPurePlot(plot) && !BASIC_EMOTIONS.some((e) => e.id === secondaryId)) {
-      secondaryId = primaryId;
-    }
-  } else {
+  // 主感情を合成24に切り替えたときは、副感情が未設定相当なら成分の一方を初期値にする
+  if (!isBasicEmotionId(primaryId) && isBasicEmotionId(plot.primaryId)) {
     const dyad = getEmotionById(primaryId);
     if ('components' in dyad) {
       secondaryId = dyad.components[0];
@@ -70,20 +67,29 @@ export function EmotionPlotEditor({ plot, onChange }: EmotionPlotEditorProps) {
 
       <label style={{ display: 'block', marginBottom: '12px' }}>
         <span style={{ display: 'block', marginBottom: '4px', fontSize: '0.85rem', color: '#c5c6c7' }}>
-          副感情（基本8・方向のヒント）
+          副感情（32感情・引かれる方向）
         </span>
         <select
           value={plot.secondaryId}
           onChange={(e) =>
-            onChange(normalizeUserPlotRow({ ...plot, secondaryId: e.target.value as BasicEmotionId }))
+            onChange(normalizeUserPlotRow({ ...plot, secondaryId: e.target.value as EmotionId }))
           }
           style={selectStyle}
         >
-          {BASIC_EMOTIONS.map((emotion) => (
-            <option key={emotion.id} value={emotion.id}>
-              {emotion.label}
-            </option>
-          ))}
+          <optgroup label="基本8感情">
+            {BASIC_EMOTIONS.map((emotion) => (
+              <option key={emotion.id} value={emotion.id}>
+                {emotion.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="中間24感情">
+            {DYAD_EMOTIONS.map((dyad) => (
+              <option key={dyad.id} value={dyad.id}>
+                {dyad.label}
+              </option>
+            ))}
+          </optgroup>
         </select>
       </label>
 
@@ -107,7 +113,7 @@ export function EmotionPlotEditor({ plot, onChange }: EmotionPlotEditorProps) {
 
       <p style={{ margin: '0 0 12px', fontSize: '0.78rem', color: '#9ca3af', lineHeight: 1.5 }}>
         {pure
-          ? '主・副が同じ基本感情 → 感情球の中心周りを公転します。'
+          ? '主・副が同じ（純感情）→ その感情中心の周りを公転。強いほど中心近く、弱いほど外周。'
           : '主感情の領域から、副感情の方向へ強度に応じて配置されます。'}
       </p>
     </div>

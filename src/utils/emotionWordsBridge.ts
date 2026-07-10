@@ -149,14 +149,14 @@ export function secondaryValueToPlotIntensity(secondaryValue: number | null | un
   return Math.max(0, Math.min(50, Math.round(normalized)));
 }
 
-export function resolveSecondaryBasicId(
+export function resolveSecondaryEmotionId(
   secondaryEmotionId: number | null | undefined,
   emotionIdBySupabaseId: Map<number, EmotionId>,
   primaryId: EmotionId,
-): BasicEmotionId {
+): EmotionId {
   if (secondaryEmotionId != null) {
     const mapped = emotionIdBySupabaseId.get(secondaryEmotionId);
-    if (mapped && isBasicEmotionId(mapped)) {
+    if (mapped) {
       return mapped;
     }
   }

@@ -1,11 +1,12 @@
-import type { BasicEmotionId, EmotionId } from '../data/emotions';
+import type { EmotionId } from '../data/emotions';
 
 export type EmotionWordTypeId = 'adjective' | 'idiom';
 
 export interface UserPlotRow {
   word_id: string;
   primaryId: EmotionId;
-  secondaryId: BasicEmotionId;
+  /** 副感情（基本8 + 合成24 の計32） */
+  secondaryId: EmotionId;
   intensity: number;
   /** emotion_words.meaning */
   meaning?: string;

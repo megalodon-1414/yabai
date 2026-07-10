@@ -1,7 +1,7 @@
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { getBasicEmotion, isBasicEmotionId } from '../data/emotions';
+import { isBasicEmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import { getPrimaryEmotionColor, rowToEmotionParams } from '../utils/emotionPlotBridge';
 import { getEmotionCenter } from '../utils/emotionSpaceLayout';
@@ -137,7 +137,7 @@ export function GravityAttractionParticles({ plot, orbitOverride }: GravityAttra
           orbitOverride={orbitOverride}
           source={source}
           target={vecToTuple(secondaryCenter)}
-          color={getBasicEmotion(params.secondaryId).color}
+          color={getPrimaryEmotionColor(params.secondaryId)}
           particleCount={30}
           particleSize={0.006}
           speed={0.12}

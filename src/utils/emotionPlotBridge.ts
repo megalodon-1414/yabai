@@ -1,4 +1,4 @@
-import type { BasicEmotionId, EmotionId } from '../data/emotions';
+import type { EmotionId } from '../data/emotions';
 import {
   BASIC_EMOTIONS,
   DYAD_EMOTIONS,
@@ -13,7 +13,7 @@ import { blendHex, pureColorByIntensity } from './emotionColor';
 
 export interface EmotionPlotParams {
   primaryId: EmotionId;
-  secondaryId: BasicEmotionId;
+  secondaryId: EmotionId;
   intensity: number;
   isPure: boolean;
 }
@@ -29,7 +29,7 @@ export function rescaleLegacyIntensity(value: number): number {
 }
 
 export function isPurePlot(row: Pick<UserPlotRow, 'primaryId' | 'secondaryId'>): boolean {
-  return isBasicEmotionId(row.primaryId) && row.primaryId === row.secondaryId;
+  return row.primaryId === row.secondaryId;
 }
 
 export function rowToEmotionParams(row: UserPlotRow): EmotionPlotParams {
@@ -51,18 +51,10 @@ export function createDefaultPlotRow(wordId?: string): UserPlotRow {
 }
 
 export function normalizeUserPlotRow(row: UserPlotRow): UserPlotRow {
-  let secondaryId = row.secondaryId;
-  if (!isBasicEmotionId(row.primaryId)) {
-    const dyad = getEmotionById(row.primaryId);
-    if ('components' in dyad && !BASIC_EMOTIONS.some((e) => e.id === secondaryId)) {
-      secondaryId = dyad.components[0];
-    }
-  }
-
   return {
     word_id: row.word_id,
     primaryId: row.primaryId,
-    secondaryId,
+    secondaryId: row.secondaryId,
     intensity: clampIntensity(row.intensity),
     meaning: row.meaning,
     usageExample: row.usageExample,
@@ -132,7 +124,7 @@ export function parseUserPlotRow(row: unknown): UserPlotRow | null {
 
   if (typeof data.primary_id === 'string' || typeof data.primaryId === 'string') {
     const primaryId = (data.primary_id ?? data.primaryId) as EmotionId;
-    const secondaryId = (data.secondary_id ?? data.secondaryId ?? primaryId) as BasicEmotionId;
+    const secondaryId = (data.secondary_id ?? data.secondaryId ?? primaryId) as EmotionId;
     const intensity = clampIntensity(Number(data.intensity ?? 50));
     return normalizeUserPlotRow({ word_id, primaryId, secondaryId, intensity });
   }
@@ -176,6 +168,6 @@ export function emotionPlotColor(params: EmotionPlotParams): string {
     return pureColorByIntensity(primary, params.intensity);
   }
 
-  const secondary = getBasicEmotion(params.secondaryId).color;
+  const secondary = getPrimaryEmotionColor(params.secondaryId);
   return blendHex(primary, secondary, params.intensity / EMOTION_INTENSITY_MAX);
 }

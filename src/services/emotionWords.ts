@@ -6,7 +6,7 @@ import {
   buildEmotionIdBySupabaseId,
   mapWordTypeId,
   registerSupabaseEmotionLabels,
-  resolveSecondaryBasicId,
+  resolveSecondaryEmotionId,
   secondaryValueToPlotIntensity,
   type SupabaseEmotionRow,
   type SupabaseEmotionWordRow,
@@ -24,7 +24,7 @@ function emotionWordToPlot(
     return null;
   }
 
-  const secondaryId = resolveSecondaryBasicId(
+  const secondaryId = resolveSecondaryEmotionId(
     row.secondary_emotion_id,
     emotionIdBySupabaseId,
     primaryId,

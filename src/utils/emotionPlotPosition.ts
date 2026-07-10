@@ -44,9 +44,13 @@ function orbitBasis(intensity: number, wordId: string): { u: [number, number, nu
   return { u: [ux, uy, uz], v: [vx, vy, vz] };
 }
 
+/** 強度 max → 中心付近、強度 0 → 純感情エリア外周。最内でもわずかに公転する */
+const PURE_ORBIT_MIN_RADIUS_RATIO = 0.06;
+
 function pureOrbitRadius(intensity: number, sphereRadius: number): number {
-  const t = 1 - intensity / EMOTION_INTENSITY_MAX;
-  return t * PURE_AREA_RATIO * sphereRadius;
+  const t = 1 - Math.min(intensity, EMOTION_INTENSITY_MAX) / EMOTION_INTENSITY_MAX;
+  const ratio = PURE_ORBIT_MIN_RADIUS_RATIO + t * (PURE_AREA_RATIO - PURE_ORBIT_MIN_RADIUS_RATIO);
+  return ratio * sphereRadius;
 }
 
 export function getPureOrbitRingPoints(
@@ -112,6 +116,7 @@ export function getEmotionPlotPosition(
     ];
   }
 
+  // 主感情中心から副感情（基本8 or 合成24）方向へ、強度に応じて引く
   const secondaryCenter = getEmotionCenter(params.secondaryId);
   const dx = secondaryCenter.x - center.x;
   const dy = secondaryCenter.y - center.y;

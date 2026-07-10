@@ -2,7 +2,6 @@ import { Html } from '@react-three/drei';
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { getBasicEmotion } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import { getPrimaryEmotionColor, rowToEmotionParams } from '../utils/emotionPlotBridge';
 import { getEmotionCenter } from '../utils/emotionSpaceLayout';
@@ -94,7 +93,7 @@ export function WordPlot({
   }, [emotionParams.primaryId]);
   const secondaryColor = useMemo(() => {
     const parsed = new THREE.Color();
-    parsed.setStyle(getBasicEmotion(emotionParams.secondaryId).color);
+    parsed.setStyle(getPrimaryEmotionColor(emotionParams.secondaryId));
     return parsed;
   }, [emotionParams.secondaryId]);
   const primaryCenter = useMemo(() => getEmotionCenter(emotionParams.primaryId), [emotionParams.primaryId]);
