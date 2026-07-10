@@ -92,6 +92,21 @@ export function getEmotionCenter(id: EmotionId): Vec3 {
   return emotionPositions.get(id)!;
 }
 
+/** 星系の外縁（銀河中心から見て外側）上のワープゲート位置 */
+export function getEmotionSystemEdgePosition(id: EmotionId): [number, number, number] {
+  const center = getEmotionCenter(id);
+  const radius = getEmotionSphereRadius(id);
+  const length = Math.hypot(center.x, center.y, center.z) || 1;
+  const nx = center.x / length;
+  const ny = center.y / length;
+  const nz = center.z / length;
+  return [
+    center.x + nx * radius,
+    center.y + ny * radius,
+    center.z + nz * radius,
+  ];
+}
+
 export function getAllEmotionCenters(): Array<{ id: EmotionId; position: Vec3; color: string; label: string }> {
   return [
     ...BASIC_EMOTIONS.map((emotion) => ({

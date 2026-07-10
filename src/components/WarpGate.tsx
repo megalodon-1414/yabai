@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import type { EmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import { getEmotionCenter } from '../utils/emotionSpaceLayout';
 import { plotPositionFromRow, type PlotOrbitOverride } from '../utils/plotFromUserPlot';
@@ -17,9 +18,13 @@ const ACTIVE_GATE_RADIAL_COUNT = 18;
 const PASSIVE_GATE_RADIAL_COUNT = 10;
 
 interface WarpGateProps {
-  plot: UserPlotRow;
+  targetEmotionId: EmotionId;
+  /** プロット追従ゲート用。星系端ゲートでは省略し sourceOverride を使う */
+  plot?: UserPlotRow;
   orbitOverride?: PlotOrbitOverride;
   sourceOverride?: [number, number, number];
+  /** true のとき source をそのままゲート位置にし、中心方向へ向ける（星系端用） */
+  anchorAtSource?: boolean;
   color: string;
   hoverLabel: string;
   active?: boolean;
@@ -75,9 +80,11 @@ function createWormholeGridPositions(radius: number, length: number, ringCount: 
 }
 
 export function WarpGate({
+  targetEmotionId,
   plot,
   orbitOverride,
   sourceOverride,
+  anchorAtSource = false,
   color,
   hoverLabel,
   active = false,
@@ -91,9 +98,9 @@ export function WarpGate({
   const sizeProgress = useRef(active ? 1 : 0);
   const source = useRef(new THREE.Vector3());
   const target = useMemo(() => {
-    const center = getEmotionCenter(plot.secondaryId);
+    const center = getEmotionCenter(targetEmotionId);
     return new THREE.Vector3(center.x, center.y, center.z);
-  }, [plot.secondaryId]);
+  }, [targetEmotionId]);
   const direction = useRef(new THREE.Vector3());
   const gatePosition = useRef(new THREE.Vector3());
   const exitPosition = useRef(new THREE.Vector3());
@@ -119,17 +126,28 @@ export function WarpGate({
     const group = groupRef.current;
     if (!group) return;
 
-    source.current.set(...(sourceOverride ?? plotPositionFromRow(plot, state.clock.elapsedTime, orbitOverride)));
+    if (sourceOverride) {
+      source.current.set(...sourceOverride);
+    } else if (plot) {
+      source.current.set(...plotPositionFromRow(plot, state.clock.elapsedTime, orbitOverride));
+    } else {
+      return;
+    }
+
     direction.current.copy(target).sub(source.current);
     if (direction.current.lengthSq() < 0.0001) {
       return;
     }
 
     direction.current.normalize();
-    gatePosition.current.copy(source.current).addScaledVector(
-      direction.current,
-      active ? ACTIVE_GATE_DISTANCE_FROM_SOURCE : PASSIVE_GATE_DISTANCE_FROM_SOURCE,
-    );
+    if (anchorAtSource) {
+      gatePosition.current.copy(source.current);
+    } else {
+      gatePosition.current.copy(source.current).addScaledVector(
+        direction.current,
+        active ? ACTIVE_GATE_DISTANCE_FROM_SOURCE : PASSIVE_GATE_DISTANCE_FROM_SOURCE,
+      );
+    }
     baseQuaternion.current.setFromUnitVectors(localForward, direction.current);
     spinQuaternion.current.setFromAxisAngle(localForward, state.clock.elapsedTime * (active ? 0.55 : 0.18));
     sizeProgress.current = THREE.MathUtils.lerp(sizeProgress.current, active ? 1 : 0, 1 - Math.exp(-7 * delta));

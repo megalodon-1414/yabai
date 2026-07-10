@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { getEmotionById } from '../data/emotions';
+import { ALL_EMOTIONS, getEmotionById, type EmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import {
   createMixedPlotOrbitOverrides,
@@ -22,7 +22,9 @@ import {
   EXPLORATION_NEARBY_RADIUS,
   EXPLORATION_SCREEN_ANCHOR,
 } from '../utils/explorationMode';
-import { getEmotionCenter } from '../utils/emotionSpaceLayout';
+import { getEmotionCenter, getEmotionSystemEdgePosition } from '../utils/emotionSpaceLayout';
+import { resolvePrimaryEmotionLabel } from '../utils/emotionCoordinates';
+import { findLinkedWarpDestination, getFacingEdgePosition } from '../utils/warpGateLink';
 import type { MinimapSyncState } from '../utils/emotionMinimapLayout';
 import { EmotionSpaceAreas } from './EmotionSpaceAreas';
 import { ExplorationDistantPlotCloud } from './ExplorationDistantPlotCloud';
@@ -45,6 +47,7 @@ const WHEEL_ZOOM_SPEED = 0.0015;
 const EXPLORATION_ORBIT_CAMERA_DISTANCE = 1.3;
 const EXPLORATION_MIXED_ORBIT_CAMERA_DISTANCE = 0.68;
 const SELECTED_ORBIT_TIME_SCALE = 0.18;
+const EMOTION_SYSTEM_GATE_NEARBY_RADIUS = 2.4;
 
 type FocusPhase = 'idle' | 'movingTarget' | 'movingView' | 'adjustingZoom' | 'focused';
 
@@ -54,6 +57,18 @@ interface WarpGateEntry {
   orbitOverride?: PlotOrbitOverride;
   sourceOverride?: [number, number, number];
   active: boolean;
+}
+
+interface EmotionSystemWarpGateEntry {
+  key: string;
+  emotionId: EmotionId;
+  /** ゲートが属する星系（戻り側のホスト） */
+  hostSystemId: EmotionId;
+  edgePosition: [number, number, number];
+  color: string;
+  hoverLabel: string;
+  active: boolean;
+  hasTargets: boolean;
 }
 
 interface SpaceCanvasProps {
@@ -557,10 +572,16 @@ export function SpaceCanvas({
       return [];
     }
 
+    const hasWarpTarget = (secondaryId: EmotionId) =>
+      plots.some((targetPlot) => targetPlot.primaryId === secondaryId);
+
     const strongestByPair = new Map<string, number>();
     for (const plot of plots) {
       const params = rowToEmotionParams(plot);
-      if (params.isPure) {
+      if (params.isPure || params.primaryId === params.secondaryId) {
+        continue;
+      }
+      if (!hasWarpTarget(params.secondaryId)) {
         continue;
       }
 
@@ -570,23 +591,36 @@ export function SpaceCanvas({
 
     return plots.filter((plot) => {
       const params = rowToEmotionParams(plot);
-      if (params.isPure) {
+      if (params.isPure || params.primaryId === params.secondaryId) {
         return false;
+      }
+      if (!hasWarpTarget(params.secondaryId)) {
+        return false;
+      }
+
+      // 選択中の混合感情は、副感情星系へのゲートを必ず出す
+      if (plot.word_id === selectedId) {
+        return true;
       }
 
       const key = `${params.primaryId}:${params.secondaryId}`;
       const strongestIntensity = strongestByPair.get(key) ?? -Infinity;
-      const hasWarpTarget = plots.some(
-        (targetPlot) => isPureEmotionPlot(targetPlot) && targetPlot.primaryId === params.secondaryId,
-      );
-
-      return hasWarpTarget && params.intensity >= strongestIntensity;
+      return params.intensity >= strongestIntensity;
     });
-  }, [explorationMode, isDefaultView, plots]);
+  }, [explorationMode, isDefaultView, plots, selectedId]);
 
   const selectedWarpGatePlot = useMemo(() => {
     if (!selectedPlot) {
       return null;
+    }
+
+    const selectedParams = rowToEmotionParams(selectedPlot);
+    if (
+      !selectedParams.isPure
+      && selectedParams.primaryId !== selectedParams.secondaryId
+      && warpGatePlots.some((plot) => plot.word_id === selectedPlot.word_id)
+    ) {
+      return selectedPlot;
     }
 
     if (selectedMixedOrbit) {
@@ -600,19 +634,35 @@ export function SpaceCanvas({
   }, [mixedOrbitOverrides, selectedMixedOrbit, selectedPlot, warpGatePlots]);
 
   const warpGateTargets = useMemo(() => {
-    if (!selectedWarpGatePlot) {
+    if (!selectedWarpGatePlot || !selectedPlot) {
       return [];
     }
 
     const params = rowToEmotionParams(selectedWarpGatePlot);
-    return plots.filter((plot) => isPureEmotionPlot(plot) && plot.primaryId === params.secondaryId);
-  }, [plots, selectedWarpGatePlot]);
+    const fromEmotionId = selectedPlot.primaryId;
+    const toEmotionId = params.secondaryId;
+    if (toEmotionId === fromEmotionId) {
+      return [];
+    }
+
+    const linked = findLinkedWarpDestination(plots, fromEmotionId, toEmotionId, {
+      excludeWordId: selectedId,
+      orbitOverrides: mixedOrbitOverrides,
+    });
+    return linked ? [linked] : [];
+  }, [mixedOrbitOverrides, plots, selectedId, selectedPlot, selectedWarpGatePlot]);
 
   const visibleWarpGateEntries = useMemo((): WarpGateEntry[] => {
     const entries: WarpGateEntry[] = [];
     const seenGroups = new Set<string>();
+    const currentSystemId = selectedPlot?.primaryId ?? null;
 
     for (const plot of warpGatePlots) {
+      // 自身の星系へのゲートは出さない
+      if (currentSystemId && plot.secondaryId === currentSystemId) {
+        continue;
+      }
+
       const orbitOverride = mixedOrbitOverrides.get(plot.word_id);
       const active =
         orbitOverride && selectedMixedOrbit
@@ -656,14 +706,143 @@ export function SpaceCanvas({
     }
 
     return entries;
-  }, [mixedOrbitOverrides, nearbyPlotIds, selectedId, selectedMixedOrbit, warpGatePlots]);
+  }, [mixedOrbitOverrides, nearbyPlotIds, plots, selectedId, selectedMixedOrbit, selectedPlot?.primaryId, warpGatePlots]);
 
-  const handleWarpGateSelect = useCallback(() => {
-    if (warpGateTargets.length === 0) {
-      return;
+  const pureTargetsByEmotion = useMemo(() => {
+    const map = new Map<EmotionId, UserPlotRow[]>();
+    for (const plot of plots) {
+      if (!isPureEmotionPlot(plot)) {
+        continue;
+      }
+      const list = map.get(plot.primaryId) ?? [];
+      list.push(plot);
+      map.set(plot.primaryId, list);
+    }
+    return map;
+  }, [plots]);
+
+  const primaryPlotsByEmotion = useMemo(() => {
+    const map = new Map<EmotionId, UserPlotRow[]>();
+    for (const plot of plots) {
+      const list = map.get(plot.primaryId) ?? [];
+      list.push(plot);
+      map.set(plot.primaryId, list);
+    }
+    return map;
+  }, [plots]);
+
+  const emotionSystemWarpGates = useMemo((): EmotionSystemWarpGateEntry[] => {
+    if (!explorationMode) {
+      return [];
     }
 
-    const target = warpGateTargets[Math.floor(Math.random() * warpGateTargets.length)];
+    const currentSystemId = selectedPlot?.primaryId ?? null;
+    const selectedPosition = selectedPlot && !isDefaultView
+      ? plotPositionFromRow(selectedPlot, 0, mixedOrbitOverrides.get(selectedPlot.word_id))
+      : null;
+
+    const directedPairs = new Set<string>();
+    for (const plot of plots) {
+      const params = rowToEmotionParams(plot);
+      if (params.isPure || params.primaryId === params.secondaryId) {
+        continue;
+      }
+      if (!plots.some((candidate) => candidate.primaryId === params.secondaryId)) {
+        continue;
+      }
+      directedPairs.add(`${params.primaryId}>${params.secondaryId}`);
+    }
+
+    const linkedReturnGates: EmotionSystemWarpGateEntry[] = [];
+    for (const pairKey of directedPairs) {
+      const [fromId, toId] = pairKey.split('>') as [EmotionId, EmotionId];
+      if (directedPairs.has(`${toId}>${fromId}`)) {
+        continue;
+      }
+      // 逆方向プロットが無いとき、to 星系の from 向き端に戻りゲートを補う
+      if (currentSystemId && fromId === currentSystemId) {
+        continue;
+      }
+
+      const edgePosition = getFacingEdgePosition(toId, fromId);
+      const linked = findLinkedWarpDestination(plots, toId, fromId, {
+        excludeWordId: selectedId,
+        orbitOverrides: mixedOrbitOverrides,
+      });
+      const nearby = selectedPosition
+        ? Math.hypot(
+            edgePosition[0] - selectedPosition[0],
+            edgePosition[1] - selectedPosition[1],
+            edgePosition[2] - selectedPosition[2],
+          ) <= EMOTION_SYSTEM_GATE_NEARBY_RADIUS
+        : false;
+      const label = resolvePrimaryEmotionLabel(fromId);
+
+      linkedReturnGates.push({
+        key: `linked-return-gate-${toId}-to-${fromId}`,
+        emotionId: fromId,
+        hostSystemId: toId,
+        edgePosition,
+        color: getPrimaryEmotionColor(fromId),
+        hoverLabel: `to${label}空間`,
+        active: nearby && linked !== null,
+        hasTargets: linked !== null,
+      });
+    }
+
+    const systemEdgeGates = ALL_EMOTIONS.flatMap((emotion) => {
+      const emotionId = emotion.id as EmotionId;
+      if (currentSystemId && emotionId === currentSystemId) {
+        return [];
+      }
+
+      const edgePosition = currentSystemId
+        ? getFacingEdgePosition(emotionId, currentSystemId)
+        : getEmotionSystemEdgePosition(emotionId);
+      const linked = currentSystemId
+        ? findLinkedWarpDestination(plots, currentSystemId, emotionId, {
+            excludeWordId: selectedId,
+            orbitOverrides: mixedOrbitOverrides,
+          })
+        : null;
+      const targets = linked
+        ? [linked]
+        : (pureTargetsByEmotion.get(emotionId) ?? primaryPlotsByEmotion.get(emotionId) ?? []);
+      const nearby = selectedPosition
+        ? Math.hypot(
+            edgePosition[0] - selectedPosition[0],
+            edgePosition[1] - selectedPosition[1],
+            edgePosition[2] - selectedPosition[2],
+          ) <= EMOTION_SYSTEM_GATE_NEARBY_RADIUS
+        : false;
+      const label = resolvePrimaryEmotionLabel(emotionId);
+
+      return [{
+        key: `emotion-system-gate-${emotionId}`,
+        emotionId,
+        hostSystemId: emotionId,
+        edgePosition,
+        color: getPrimaryEmotionColor(emotionId),
+        hoverLabel: `to${label}空間`,
+        active: nearby && targets.length > 0,
+        hasTargets: targets.length > 0,
+      }];
+    });
+
+    return [...systemEdgeGates, ...linkedReturnGates];
+  }, [
+    explorationMode,
+    isDefaultView,
+    mixedOrbitOverrides,
+    plots,
+    primaryPlotsByEmotion,
+    pureTargetsByEmotion,
+    selectedId,
+    selectedPlot,
+  ]);
+
+  const handleWarpGateSelect = useCallback(() => {
+    const target = warpGateTargets[0];
     if (!target) {
       return;
     }
@@ -671,6 +850,30 @@ export function SpaceCanvas({
     setIsDefaultView(false);
     onWordSelect(target.word_id);
   }, [onWordSelect, warpGateTargets]);
+
+  const handleEmotionSystemWarp = useCallback(
+    (targetEmotionId: EmotionId, hostSystemId?: EmotionId) => {
+      const fromEmotionId = hostSystemId && hostSystemId !== targetEmotionId
+        ? hostSystemId
+        : selectedPlot?.primaryId;
+
+      if (!fromEmotionId || fromEmotionId === targetEmotionId) {
+        return;
+      }
+
+      const linked = findLinkedWarpDestination(plots, fromEmotionId, targetEmotionId, {
+        excludeWordId: selectedId,
+        orbitOverrides: mixedOrbitOverrides,
+      });
+      if (!linked) {
+        return;
+      }
+
+      setIsDefaultView(false);
+      onWordSelect(linked.word_id);
+    },
+    [mixedOrbitOverrides, onWordSelect, plots, selectedId, selectedPlot?.primaryId],
+  );
 
   const getOrbitTimeScale = (plot: UserPlotRow | null): number =>
     isSelectedOrbitingPlot && selectedPlot && plot && isPureEmotionPlot(plot) && plot.primaryId === selectedPlot.primaryId
@@ -809,6 +1012,7 @@ export function SpaceCanvas({
           {visibleWarpGateEntries.map((entry) => (
             <WarpGate
               key={entry.key}
+              targetEmotionId={entry.plot.secondaryId}
               plot={entry.plot}
               orbitOverride={entry.orbitOverride}
               sourceOverride={entry.sourceOverride}
@@ -816,6 +1020,20 @@ export function SpaceCanvas({
               hoverLabel={`to${getEmotionById(entry.plot.secondaryId).label}空間`}
               active={entry.active && warpGateTargets.length > 0}
               onWarp={handleWarpGateSelect}
+              onHoverLabelChange={onHoveredWarpGateChange}
+              onHoverScreenPosition={onHoveredScreenPosition}
+            />
+          ))}
+          {emotionSystemWarpGates.map((entry) => (
+            <WarpGate
+              key={entry.key}
+              targetEmotionId={entry.emotionId}
+              sourceOverride={entry.edgePosition}
+              anchorAtSource
+              color={entry.color}
+              hoverLabel={entry.hoverLabel}
+              active={entry.active}
+              onWarp={() => handleEmotionSystemWarp(entry.emotionId, entry.hostSystemId)}
               onHoverLabelChange={onHoveredWarpGateChange}
               onHoverScreenPosition={onHoveredScreenPosition}
             />
