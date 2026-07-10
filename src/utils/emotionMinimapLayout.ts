@@ -1,4 +1,4 @@
-import type { BasicEmotionId } from '../data/emotions';
+import type { BasicEmotionId, EmotionId } from '../data/emotions';
 import { BASIC_EMOTIONS } from '../data/emotions';
 import { RING_RADIUS, Y_LAYER_OFFSET, getEmotionCenter } from './emotionSpaceLayout';
 
@@ -7,6 +7,7 @@ export interface MinimapSyncState {
   cameraTarget: [number, number, number];
   cameraUp: [number, number, number];
   focusPosition: [number, number, number] | null;
+  primaryId: EmotionId | null;
 }
 
 /** ミニマップ表示用スケール（感情環半径を 1 に正規化） */

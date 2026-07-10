@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { BASIC_EMOTIONS } from '../data/emotions';
 import type { AppBackgroundTheme } from '../utils/appBackgroundTheme';
-import { getBackgroundThemeColors } from '../utils/appBackgroundTheme';
+import { getEmotionPositionInfo } from '../utils/emotionCoordinates';
 import {
   MINIMAP_DEFAULT_CAMERA,
   MINIMAP_SHAPE_CENTER,
@@ -14,8 +14,29 @@ import {
   type MinimapSyncState,
 } from '../utils/emotionMinimapLayout';
 
-const SIZE = 176;
+const MAP_WIDTH = 204;
+const VIEWPORT = 180;
+const PANEL_RADIUS = 10;
 const FIT_MARGIN = 1.14;
+
+const HOLO = {
+  dark: {
+    primary: '#5dffe8',
+    panel: 'rgba(4, 18, 24, 0.42)',
+    border: 'rgba(93, 255, 232, 0.55)',
+    glow: 'rgba(69, 243, 255, 0.35)',
+    text: '#b8fff6',
+    subtext: 'rgba(184, 255, 246, 0.72)',
+  },
+  light: {
+    primary: '#0099aa',
+    panel: 'rgba(220, 248, 252, 0.55)',
+    border: 'rgba(0, 130, 150, 0.5)',
+    glow: 'rgba(0, 150, 170, 0.22)',
+    text: '#005566',
+    subtext: 'rgba(0, 70, 80, 0.75)',
+  },
+} as const;
 
 interface EmotionMinimapProps {
   syncState: MinimapSyncState | null;
@@ -70,19 +91,58 @@ function MinimapCamera({ syncState }: { syncState: MinimapSyncState | null }) {
   return null;
 }
 
-function MinimapWireframe({ wireColor }: { wireColor: string }) {
+function MinimapWireframe({ holoColor }: { holoColor: string }) {
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(buildMinimapWireframePositions(), 3));
     return geo;
   }, []);
 
-  useEffect(() => () => geometry.dispose(), [geometry]);
+  const glowMat = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: holoColor,
+        transparent: true,
+        opacity: 0.22,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    [holoColor],
+  );
+
+  const coreMat = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: holoColor,
+        transparent: true,
+        opacity: 0.88,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    [holoColor],
+  );
+
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      glowMat.dispose();
+      coreMat.dispose();
+    },
+    [geometry, glowMat, coreMat],
+  );
+
+  useFrame((state) => {
+    const pulse = 0.84 + Math.sin(state.clock.elapsedTime * 2.4) * 0.08;
+    const flicker = 0.97 + Math.sin(state.clock.elapsedTime * 17.3) * 0.03;
+    coreMat.opacity = 0.88 * pulse * flicker;
+    glowMat.opacity = 0.22 * pulse;
+  });
 
   return (
-    <lineSegments geometry={geometry}>
-      <lineBasicMaterial color={wireColor} transparent opacity={0.72} />
-    </lineSegments>
+    <group>
+      <lineSegments geometry={geometry} scale={1.03} material={glowMat} />
+      <lineSegments geometry={geometry} material={coreMat} />
+    </group>
   );
 }
 
@@ -94,10 +154,22 @@ function MinimapEmotionNodes() {
       {BASIC_EMOTIONS.map((emotion) => {
         const [x, y, z] = vertices[emotion.id];
         return (
-          <mesh key={emotion.id} position={[x, y, z]}>
-            <sphereGeometry args={[0.045, 10, 10]} />
-            <meshBasicMaterial color={emotion.color} />
-          </mesh>
+          <group key={emotion.id} position={[x, y, z]}>
+            <mesh scale={1.8}>
+              <sphereGeometry args={[0.045, 10, 10]} />
+              <meshBasicMaterial
+                color={emotion.color}
+                transparent
+                opacity={0.35}
+                blending={THREE.AdditiveBlending}
+                depthWrite={false}
+              />
+            </mesh>
+            <mesh>
+              <sphereGeometry args={[0.028, 8, 8]} />
+              <meshBasicMaterial color={emotion.color} transparent opacity={0.95} />
+            </mesh>
+          </group>
         );
       })}
     </>
@@ -107,6 +179,7 @@ function MinimapEmotionNodes() {
 function MinimapFocusMarker({ syncState }: { syncState: MinimapSyncState | null }) {
   const markerRef = useRef<THREE.Group>(null);
   const ringRef = useRef<THREE.Mesh>(null);
+  const reticleRef = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
     if (!markerRef.current) {
@@ -121,24 +194,37 @@ function MinimapFocusMarker({ syncState }: { syncState: MinimapSyncState | null 
     markerRef.current.visible = true;
     markerRef.current.position.set(...worldTupleToMinimapLocal(syncState.focusPosition));
 
+    const pulse = 1 + Math.sin(state.clock.elapsedTime * 3.6) * 0.1;
     if (ringRef.current) {
-      ringRef.current.scale.setScalar(1 + Math.sin(state.clock.elapsedTime * 3.2) * 0.08);
+      ringRef.current.scale.setScalar(pulse);
+      ringRef.current.rotation.z = state.clock.elapsedTime * 0.8;
+    }
+    if (reticleRef.current) {
+      reticleRef.current.rotation.z = -state.clock.elapsedTime * 1.1;
     }
   });
 
   return (
     <group ref={markerRef} visible={false}>
-      <mesh ref={ringRef}>
-        <sphereGeometry args={[0.09, 14, 14]} />
-        <meshBasicMaterial color="#45f3ff" transparent opacity={0.28} />
+      <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.11, 0.145, 32]} />
+        <meshBasicMaterial color="#5dffe8" transparent opacity={0.5} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+      <mesh ref={reticleRef} rotation={[Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.07, 0.078, 4]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.9} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <mesh>
-        <sphereGeometry args={[0.05, 12, 12]} />
-        <meshBasicMaterial color="#45f3ff" />
+        <sphereGeometry args={[0.058, 12, 12]} />
+        <meshBasicMaterial color="#5dffe8" transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <mesh>
-        <sphereGeometry args={[0.022, 8, 8]} />
-        <meshBasicMaterial color="#ffffff" />
+        <sphereGeometry args={[0.038, 10, 10]} />
+        <meshBasicMaterial color="#5dffe8" transparent opacity={0.95} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[0.018, 8, 8]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.95} />
       </mesh>
     </group>
   );
@@ -148,7 +234,13 @@ function MinimapViewRay({ syncState }: { syncState: MinimapSyncState | null }) {
   const line = useMemo(() => {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
-    const material = new THREE.LineBasicMaterial({ color: '#45f3ff', transparent: true, opacity: 0.9 });
+    const material = new THREE.LineBasicMaterial({
+      color: '#5dffe8',
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
     const object = new THREE.Line(geometry, material);
     object.visible = false;
     return object;
@@ -162,7 +254,7 @@ function MinimapViewRay({ syncState }: { syncState: MinimapSyncState | null }) {
     [line],
   );
 
-  useFrame(() => {
+  useFrame((state) => {
     if (!syncState?.focusPosition) {
       line.visible = false;
       return;
@@ -178,11 +270,12 @@ function MinimapViewRay({ syncState }: { syncState: MinimapSyncState | null }) {
       return;
     }
 
-    const tip = focus.clone().add(dir.normalize().multiplyScalar(0.28));
+    const tip = focus.clone().add(dir.normalize().multiplyScalar(0.36));
     const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute;
     attr.setXYZ(0, focus.x, focus.y, focus.z);
     attr.setXYZ(1, tip.x, tip.y, tip.z);
     attr.needsUpdate = true;
+    (line.material as THREE.LineBasicMaterial).opacity = 0.7 + Math.sin(state.clock.elapsedTime * 5) * 0.15;
     line.visible = true;
   });
 
@@ -191,19 +284,16 @@ function MinimapViewRay({ syncState }: { syncState: MinimapSyncState | null }) {
 
 function MinimapScene({
   syncState,
-  wireColor,
-  canvasClear,
+  holoColor,
 }: {
   syncState: MinimapSyncState | null;
-  wireColor: string;
-  canvasClear: string;
+  holoColor: string;
 }) {
   return (
     <>
-      <color attach="background" args={[canvasClear]} />
       <MinimapCamera syncState={syncState} />
-      <ambientLight intensity={0.85} />
-      <MinimapWireframe wireColor={wireColor} />
+      <ambientLight intensity={0.45} />
+      <MinimapWireframe holoColor={holoColor} />
       <MinimapEmotionNodes />
       <MinimapFocusMarker syncState={syncState} />
       <MinimapViewRay syncState={syncState} />
@@ -211,51 +301,200 @@ function MinimapScene({
   );
 }
 
+function MapPinIcon({ color }: { color: string }) {
+  return (
+    <svg width="18" height="21" viewBox="0 0 13 16" fill="none" aria-hidden style={{ flexShrink: 0 }}>
+      <path
+        d="M6.5 0C3.46 0 1 2.46 1 5.5c0 4.06 5.5 10.5 5.5 10.5S12 9.56 12 5.5C12 2.46 9.54 0 6.5 0Z"
+        fill={color}
+        opacity={0.92}
+      />
+      <circle cx="6.5" cy="5.5" r="2.1" fill="#ffffff" opacity={0.95} />
+    </svg>
+  );
+}
+
 export function EmotionMinimap({ syncState, backgroundTheme }: EmotionMinimapProps) {
-  const theme = getBackgroundThemeColors(backgroundTheme);
-  const wireColor = backgroundTheme === 'dark' ? '#f4ecf7' : '#2a2a34';
-  const canvasClear = backgroundTheme === 'dark' ? 'rgba(8, 7, 12, 0.95)' : 'rgba(240, 240, 244, 0.95)';
+  const holo = HOLO[backgroundTheme];
+
+  const positionInfo = useMemo(() => {
+    if (!syncState?.focusPosition || !syncState.primaryId) {
+      return null;
+    }
+    return getEmotionPositionInfo(syncState.focusPosition, syncState.primaryId);
+  }, [syncState?.focusPosition, syncState?.primaryId]);
 
   return (
     <div
       aria-label="感情空間ミニマップ"
+      className="emotion-minimap-holo"
       style={{
         position: 'absolute',
         top: '16px',
         right: '16px',
         zIndex: 2,
-        width: `${SIZE}px`,
-        padding: '10px',
-        border: `1px solid ${theme.controlBorder}`,
-        borderRadius: '12px',
-        backgroundColor: theme.controlBackground,
-        backdropFilter: 'blur(10px)',
-        boxShadow: '0 12px 28px rgba(0, 0, 0, 0.22)',
+        width: `${MAP_WIDTH}px`,
         pointerEvents: 'none',
-        overflow: 'hidden',
       }}
     >
-      <p
+      <style>
+        {`
+          .emotion-minimap-holo {
+            animation: holoFloat 5.5s ease-in-out infinite;
+          }
+          @keyframes holoFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-2px); }
+          }
+          @keyframes holoScan {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(220%); }
+          }
+          @keyframes holoFlicker {
+            0%, 100% { opacity: 1; }
+            48% { opacity: 1; }
+            49% { opacity: 0.82; }
+            50% { opacity: 1; }
+            89% { opacity: 1; }
+            90% { opacity: 0.88; }
+            91% { opacity: 1; }
+          }
+        `}
+      </style>
+
+      <div
         style={{
-          margin: '0 0 6px',
-          fontSize: '0.62rem',
-          letterSpacing: '0.14em',
-          color: theme.controlText,
-          opacity: 0.72,
-          textAlign: 'center',
+          position: 'relative',
+          padding: '12px',
+          borderRadius: `${PANEL_RADIUS}px`,
+          background: `linear-gradient(145deg, ${holo.panel}, rgba(0,0,0,0.08))`,
+          border: `1px solid ${holo.border}`,
+          boxShadow: `0 0 18px ${holo.glow}, inset 0 0 20px rgba(93, 255, 232, 0.06)`,
+          backdropFilter: 'blur(14px) saturate(1.4)',
+          animation: 'holoFlicker 6s linear infinite',
         }}
       >
-        MAP
-      </p>
-      <div style={{ width: `${SIZE - 20}px`, height: `${SIZE - 20}px`, borderRadius: '8px', overflow: 'hidden' }}>
-        <Canvas
-          camera={{ position: MINIMAP_DEFAULT_CAMERA, fov: 36, near: 0.05, far: 20 }}
-          dpr={[1, 1.5]}
-          gl={{ antialias: true, alpha: false }}
-          style={{ width: '100%', height: '100%' }}
+        <div
+          style={{
+            position: 'relative',
+            width: `${VIEWPORT}px`,
+            height: `${VIEWPORT}px`,
+            borderRadius: '50%',
+            overflow: 'hidden',
+            border: `1px solid ${holo.border}`,
+            boxShadow: `inset 0 0 20px ${holo.glow}`,
+          }}
         >
-          <MinimapScene syncState={syncState} wireColor={wireColor} canvasClear={canvasClear} />
-        </Canvas>
+          <Canvas
+            camera={{ position: MINIMAP_DEFAULT_CAMERA, fov: 36, near: 0.05, far: 20 }}
+            dpr={[1, 1.5]}
+            gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
+            style={{ width: '100%', height: '100%', background: 'transparent' }}
+            onCreated={({ gl }) => {
+              gl.setClearColor(0x000000, 0);
+            }}
+          >
+            <MinimapScene syncState={syncState} holoColor={holo.primary} />
+          </Canvas>
+
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: `repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(93, 255, 232, 0.04) 2px,
+                rgba(93, 255, 232, 0.04) 4px
+              )`,
+              pointerEvents: 'none',
+            }}
+          />
+
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              height: '28%',
+              background: 'linear-gradient(180deg, transparent, rgba(93, 255, 232, 0.12), transparent)',
+              animation: 'holoScan 3.8s linear infinite',
+              pointerEvents: 'none',
+              mixBlendMode: 'screen',
+            }}
+          />
+
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'radial-gradient(circle at center, transparent 38%, rgba(0, 12, 18, 0.62) 100%)',
+              pointerEvents: 'none',
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            marginTop: '10px',
+            width: `${VIEWPORT}px`,
+            padding: '0 2px',
+            boxSizing: 'border-box',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              flexShrink: 0,
+            }}
+          >
+            <MapPinIcon color={holo.primary} />
+            <p
+              style={{
+                margin: 0,
+                fontSize: '1.47rem',
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                color: holo.text,
+                textShadow: `0 0 8px ${holo.glow}`,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {positionInfo?.primaryEmotionLabel ?? '—'}
+            </p>
+          </div>
+          <div
+            style={{
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontSize: '0.46rem',
+              letterSpacing: '0.02em',
+              color: holo.subtext,
+              textAlign: 'right',
+              lineHeight: 1.4,
+              flexShrink: 1,
+              minWidth: 0,
+            }}
+          >
+            {positionInfo ? (
+              <>
+                <div style={{ whiteSpace: 'nowrap' }}>{positionInfo.coordinateLines[0]}</div>
+                <div style={{ whiteSpace: 'nowrap' }}>{positionInfo.coordinateLines[1]}</div>
+              </>
+            ) : (
+              <>
+                <div>— — —</div>
+                <div>— — —</div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

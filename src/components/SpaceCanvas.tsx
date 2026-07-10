@@ -437,6 +437,7 @@ function MinimapFocusTracker({
     onChange({
       ...cameraState,
       focusPosition,
+      primaryId: plot.primaryId,
     });
   });
 
