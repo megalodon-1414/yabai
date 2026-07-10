@@ -320,8 +320,12 @@ export function EmotionMinimap({ syncState, uiTheme }: EmotionMinimapProps) {
     if (!syncState?.focusPosition || !syncState.primaryId) {
       return null;
     }
-    return getEmotionPositionInfo(syncState.focusPosition, syncState.primaryId);
-  }, [syncState?.focusPosition, syncState?.primaryId]);
+    return getEmotionPositionInfo(
+      syncState.focusPosition,
+      syncState.primaryId,
+      syncState.primaryLabel,
+    );
+  }, [syncState?.focusPosition, syncState?.primaryId, syncState?.primaryLabel]);
 
   return (
     <div

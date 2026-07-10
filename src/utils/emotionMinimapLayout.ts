@@ -8,6 +8,8 @@ export interface MinimapSyncState {
   cameraUp: [number, number, number];
   focusPosition: [number, number, number] | null;
   primaryId: EmotionId | null;
+  /** Supabase emotions.name（あれば Map 表記に優先使用） */
+  primaryLabel?: string | null;
 }
 
 /** ミニマップ表示用スケール（感情環半径を 1 に正規化） */

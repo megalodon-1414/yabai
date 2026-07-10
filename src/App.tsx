@@ -3,7 +3,6 @@ import { SpaceCanvas } from './components/SpaceCanvas';
 import { EmotionMinimap, MAP_WIDTH } from './components/EmotionMinimap';
 import { ExplorationToolsPanel } from './components/ExplorationToolsPanel';
 import { WordEditor } from './components/WordEditor';
-import { getEmotionById } from './data/emotions';
 import { usePlotSubmit } from './hooks/usePlotSubmit';
 import { fetchEmotionWordsAsPlots } from './services/emotionWords';
 import type { UserPlotRow } from './types/userPlot';
@@ -21,6 +20,7 @@ import { getExplorationInfoUiLayout } from './utils/explorationInfoUiLayout';
 import type { MinimapSyncState } from './utils/emotionMinimapLayout';
 import { getPrimaryEmotionColor } from './utils/emotionPlotBridge';
 import { DEFAULT_EMOTION_UI_ACCENT, getEmotionUiTheme } from './utils/emotionUiTheme';
+import { resolvePrimaryEmotionLabel } from './utils/emotionCoordinates';
 import { filterPlotsByTags, getPlotKindLabel, type PlotTagId } from './utils/plotTags';
 import { mergeWithSeedPlots } from './utils/seedPlots';
 
@@ -760,24 +760,68 @@ function App() {
                   >
                     {infoPanelPlot.word_id}
                   </h2>
+                  {infoPanelPlot.ruby?.trim() && (
+                    <p
+                      style={{
+                        writingMode: 'vertical-rl',
+                        textOrientation: 'mixed',
+                        margin: 0,
+                        fontSize: `calc(${currentWordPanel.wordFontSize} * 0.78)`,
+                        lineHeight: 1.35,
+                        letterSpacing: '0.1em',
+                        color: emotionUiTheme.textMuted,
+                      }}
+                    >
+                      {`【${infoPanelPlot.ruby.trim()}】`}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              <p
+              <div
                 style={{
-                  writingMode: 'vertical-rl',
-                  textOrientation: 'mixed',
-                  margin: 0,
+                  display: 'flex',
+                  flexDirection: 'row-reverse',
+                  alignItems: 'flex-start',
+                  gap: `${currentWordPanel.innerGap}px`,
+                  minWidth: 0,
                   maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
-                  fontSize: currentWordPanel.bodyFontSize,
-                  lineHeight: 1.9,
-                  letterSpacing: '0.06em',
-                  color: emotionUiTheme.textSecondary,
                 }}
               >
-                {infoPanelPlot.meaning?.trim() ||
-                  'この単語の意味データはまだ登録されていません。'}
-              </p>
+                <p
+                  style={{
+                    writingMode: 'vertical-rl',
+                    textOrientation: 'mixed',
+                    margin: 0,
+                    maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
+                    fontSize: currentWordPanel.bodyFontSize,
+                    lineHeight: 1.9,
+                    letterSpacing: '0.06em',
+                    color: emotionUiTheme.textSecondary,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {infoPanelPlot.meaning?.trim() ||
+                    'この単語の意味データはまだ登録されていません。'}
+                </p>
+                {infoPanelPlot.usageExample?.trim() && (
+                  <p
+                    style={{
+                      writingMode: 'vertical-rl',
+                      textOrientation: 'mixed',
+                      margin: 0,
+                      maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
+                      fontSize: currentWordPanel.dlFontSize,
+                      lineHeight: 1.8,
+                      letterSpacing: '0.06em',
+                      color: emotionUiTheme.textMuted,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {`用例：${infoPanelPlot.usageExample.trim()}`}
+                  </p>
+                )}
+              </div>
 
               <dl
                 style={{
@@ -795,11 +839,11 @@ function App() {
               >
                 <dt style={{ color: emotionUiTheme.textMuted }}>主感情</dt>
                 <dd style={{ margin: 0, fontWeight: 700 }}>
-                  {infoPanelPlot.primaryLabel ?? getEmotionById(infoPanelPlot.primaryId).label}
+                  {resolvePrimaryEmotionLabel(infoPanelPlot.primaryId, infoPanelPlot.primaryLabel)}
                 </dd>
                 <dt style={{ color: emotionUiTheme.textMuted }}>副感情</dt>
                 <dd style={{ margin: 0, fontWeight: 700 }}>
-                  {infoPanelPlot.secondaryLabel ?? getEmotionById(infoPanelPlot.secondaryId).label}
+                  {resolvePrimaryEmotionLabel(infoPanelPlot.secondaryId, infoPanelPlot.secondaryLabel)}
                 </dd>
                 <dt style={{ color: emotionUiTheme.textMuted }}>強度</dt>
                 <dd style={{ margin: 0, fontWeight: 700 }}>{infoPanelPlot.intensity}</dd>

@@ -439,6 +439,7 @@ function MinimapFocusTracker({
       ...cameraState,
       focusPosition,
       primaryId: plot.primaryId,
+      primaryLabel: plot.primaryLabel ?? null,
     });
   });
 

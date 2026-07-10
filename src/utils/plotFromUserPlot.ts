@@ -18,7 +18,7 @@ export function plotPositionFromRow(
 }
 
 const NEARBY_PLOT_RADIUS = 2.5;
-const MIXED_ORBIT_INTENSITY_GAP = 5;
+const MIXED_ORBIT_INTENSITY_GAP = 2;
 const MIXED_ORBIT_MAX_GROUP_SIZE = 3;
 const MIXED_ORBIT_RADIUS_PADDING_RATIO = 0.12;
 const MIXED_ORBIT_MIN_RADIUS_RATIO = 0.2;
@@ -98,6 +98,10 @@ function addMixedOrbitGroup(overrides: PlotOrbitOverrideMap, group: UserPlotRow[
     .join('|');
 
   group.forEach((plot, index) => {
+    const speedSeed = hashId(plot.word_id);
+    // 周期が揃わないよう、単語ごとに角速度をばらす（おおよそ 0.18〜0.62）
+    const speed = 0.18 + ((speedSeed % 1000) / 999) * 0.44;
+
     overrides.set(plot.word_id, {
       groupKey,
       center,
@@ -105,6 +109,7 @@ function addMixedOrbitGroup(overrides: PlotOrbitOverrideMap, group: UserPlotRow[
       v,
       radius,
       phase: basePhase + (index / group.length) * Math.PI * 2,
+      speed,
     });
   });
 }

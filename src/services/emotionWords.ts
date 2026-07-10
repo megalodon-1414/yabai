@@ -1,11 +1,13 @@
 import { supabase } from '../lib/supabase';
 import type { EmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
-import { clampIntensity, normalizeUserPlotRow } from '../utils/emotionPlotBridge';
+import { normalizeUserPlotRow } from '../utils/emotionPlotBridge';
 import {
   buildEmotionIdBySupabaseId,
   mapWordTypeId,
+  registerSupabaseEmotionLabels,
   resolveSecondaryBasicId,
+  secondaryValueToPlotIntensity,
   type SupabaseEmotionRow,
   type SupabaseEmotionWordRow,
   type SupabaseWordTypeRow,
@@ -28,14 +30,11 @@ function emotionWordToPlot(
     primaryId,
   );
 
-  const secondaryValue = Number(row.secondary_value ?? 50);
-  const intensity = clampIntensity(secondaryValue / 2);
-
   return normalizeUserPlotRow({
     word_id: row.word,
     primaryId,
     secondaryId,
-    intensity,
+    intensity: secondaryValueToPlotIntensity(row.secondary_value),
     meaning: row.meaning ?? undefined,
     usageExample: row.usage_example ?? undefined,
     ruby: row.ruby ?? undefined,
@@ -76,6 +75,7 @@ export async function fetchEmotionWordsAsPlots(): Promise<UserPlotRow[]> {
   const wordTypes = (wordTypesResult.data ?? []) as SupabaseWordTypeRow[];
   const words = (wordsResult.data ?? []) as SupabaseEmotionWordRow[];
 
+  registerSupabaseEmotionLabels(emotions);
   const emotionIdBySupabaseId = buildEmotionIdBySupabaseId(emotions);
   const emotionNameById = new Map(emotions.map((emotion) => [emotion.id, emotion.name]));
 

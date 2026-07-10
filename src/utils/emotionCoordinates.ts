@@ -1,6 +1,7 @@
 import type { BasicEmotionId, EmotionId } from '../data/emotions';
 import { getEmotionById, isBasicEmotionId } from '../data/emotions';
 import { RING_RADIUS, Y_LAYER_OFFSET } from './emotionSpaceLayout';
+import { getRegisteredSupabaseEmotionLabel } from './emotionWordsBridge';
 
 /** 主感情セクターコード（座標表示用） */
 const SECTOR_CODES: Record<BasicEmotionId, string> = {
@@ -55,9 +56,21 @@ export function positionToEmotionCoordinates(position: [number, number, number])
   return `${elv}/${azm}/R${radialCode}`;
 }
 
+export function resolvePrimaryEmotionLabel(
+  primaryId: EmotionId,
+  overrideLabel?: string | null,
+): string {
+  return (
+    overrideLabel?.trim() ||
+    getRegisteredSupabaseEmotionLabel(primaryId) ||
+    getEmotionById(primaryId).label
+  );
+}
+
 export function getEmotionPositionInfo(
   position: [number, number, number],
   primaryId: EmotionId,
+  primaryLabelOverride?: string | null,
 ): EmotionPositionInfo {
   const [x, y, z] = position;
   const horizontalRadius = Math.hypot(x, z);
@@ -75,7 +88,7 @@ export function getEmotionPositionInfo(
   const coordinates = `${elv}/${azm}/R${radialCode}`;
 
   return {
-    primaryEmotionLabel: getEmotionById(primaryId).label,
+    primaryEmotionLabel: resolvePrimaryEmotionLabel(primaryId, primaryLabelOverride),
     sectorCode,
     coordinates,
     coordinateLines: [`${sectorCode} ${elv}/${azm}`, `R${radialCode}`],

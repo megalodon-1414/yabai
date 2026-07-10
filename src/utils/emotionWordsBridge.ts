@@ -102,6 +102,23 @@ export function buildEmotionIdBySupabaseId(
   return map;
 }
 
+/** EmotionId → Supabase emotions.name（32感情表記） */
+const supabaseEmotionLabelByAppId = new Map<EmotionId, string>();
+
+export function registerSupabaseEmotionLabels(emotions: readonly SupabaseEmotionRow[]): void {
+  supabaseEmotionLabelByAppId.clear();
+  for (const emotion of emotions) {
+    const appId = mapSupabaseEmotionToAppId(emotion);
+    if (appId) {
+      supabaseEmotionLabelByAppId.set(appId, emotion.name);
+    }
+  }
+}
+
+export function getRegisteredSupabaseEmotionLabel(emotionId: EmotionId): string | undefined {
+  return supabaseEmotionLabelByAppId.get(emotionId);
+}
+
 export function mapWordTypeId(
   wordTypeId: number | null | undefined,
   wordTypes: readonly SupabaseWordTypeRow[],
@@ -120,6 +137,16 @@ export function wordTypeLabel(wordType: EmotionWordTypeId | undefined): string |
   if (wordType === 'adjective') return '形容詞';
   if (wordType === 'idiom') return '熟語';
   return null;
+}
+
+/**
+ * emotion_words.secondary_value をプロット強度として等倍で使う（上限 50）。
+ * プロット位置・色・強度表示はすべてこの値を使う。
+ */
+export function secondaryValueToPlotIntensity(secondaryValue: number | null | undefined): number {
+  const value = Number(secondaryValue);
+  const normalized = Number.isFinite(value) ? value : 50;
+  return Math.max(0, Math.min(50, Math.round(normalized)));
 }
 
 export function resolveSecondaryBasicId(
