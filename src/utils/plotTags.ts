@@ -1,5 +1,6 @@
 import type { UserPlotRow } from '../types/userPlot';
 import { isExplorationDummyPlot } from './explorationDummyPlots';
+import { wordTypeLabel } from './emotionWordsBridge';
 
 export type PlotTagId =
   | 'registered'
@@ -18,13 +19,31 @@ export interface PlotTagDefinition {
 export const PLOT_TAGS: PlotTagDefinition[] = [
   { id: 'registered', label: '登録単語', available: true },
   { id: 'exploration-dummy', label: '探索用ダミー', available: true },
-  { id: 'adjective', label: '形容詞', available: false },
-  { id: 'idiom', label: '熟語', available: false },
+  { id: 'adjective', label: '形容詞', available: true },
+  { id: 'idiom', label: '熟語', available: true },
   { id: 'verb', label: '動詞', available: false },
 ];
 
 export function getPlotTagIds(plot: UserPlotRow): PlotTagId[] {
-  return isExplorationDummyPlot(plot.word_id) ? ['exploration-dummy'] : ['registered'];
+  if (isExplorationDummyPlot(plot.word_id)) {
+    return ['exploration-dummy'];
+  }
+
+  const tags: PlotTagId[] = ['registered'];
+  if (plot.wordType === 'adjective') {
+    tags.push('adjective');
+  }
+  if (plot.wordType === 'idiom') {
+    tags.push('idiom');
+  }
+  return tags;
+}
+
+export function getPlotKindLabel(plot: UserPlotRow): string {
+  if (isExplorationDummyPlot(plot.word_id)) {
+    return '探索用ダミー';
+  }
+  return wordTypeLabel(plot.wordType) ?? '登録単語';
 }
 
 /** 選択タグが空なら全件。いずれかの選択タグに一致するプロットのみ残す。 */
@@ -53,6 +72,9 @@ export function searchPlotsByQuery(
   }
 
   return plots
-    .filter((plot) => plot.word_id.toLowerCase().includes(normalized))
+    .filter((plot) => {
+      const haystacks = [plot.word_id, plot.ruby ?? '', plot.meaning ?? ''];
+      return haystacks.some((text) => text.toLowerCase().includes(normalized));
+    })
     .slice(0, limit);
 }

@@ -64,6 +64,13 @@ export function normalizeUserPlotRow(row: UserPlotRow): UserPlotRow {
     primaryId: row.primaryId,
     secondaryId,
     intensity: clampIntensity(row.intensity),
+    meaning: row.meaning,
+    usageExample: row.usageExample,
+    ruby: row.ruby,
+    wordType: row.wordType,
+    primaryLabel: row.primaryLabel,
+    secondaryLabel: row.secondaryLabel,
+    sourceId: row.sourceId,
   };
 }
 

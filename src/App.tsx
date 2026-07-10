@@ -5,7 +5,7 @@ import { ExplorationToolsPanel } from './components/ExplorationToolsPanel';
 import { WordEditor } from './components/WordEditor';
 import { getEmotionById } from './data/emotions';
 import { usePlotSubmit } from './hooks/usePlotSubmit';
-import { fetchUserPlots } from './services/userPlots';
+import { fetchEmotionWordsAsPlots } from './services/emotionWords';
 import type { UserPlotRow } from './types/userPlot';
 import {
   removePlotById,
@@ -21,11 +21,16 @@ import { getExplorationInfoUiLayout } from './utils/explorationInfoUiLayout';
 import type { MinimapSyncState } from './utils/emotionMinimapLayout';
 import { getPrimaryEmotionColor } from './utils/emotionPlotBridge';
 import { DEFAULT_EMOTION_UI_ACCENT, getEmotionUiTheme } from './utils/emotionUiTheme';
-import { filterPlotsByTags, type PlotTagId } from './utils/plotTags';
+import { filterPlotsByTags, getPlotKindLabel, type PlotTagId } from './utils/plotTags';
 import { mergeWithSeedPlots } from './utils/seedPlots';
 
 const UI_COLOR_TRANSITION =
   'border-color 320ms ease, background-color 320ms ease, color 320ms ease, box-shadow 320ms ease';
+
+function pickPreferredPlotId(plots: UserPlotRow[]): string | null {
+  const registered = plots.filter((plot) => !isExplorationDummyPlot(plot.word_id));
+  return pickRandomPlotId(registered.length > 0 ? registered : plots);
+}
 
 function App() {
   const mainRef = useRef<HTMLElement>(null);
@@ -92,11 +97,16 @@ function App() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const data = await fetchUserPlots();
+      const data = await fetchEmotionWordsAsPlots();
+      if (data.length === 0) {
+        console.warn('[emotion_words] fetched 0 rows; falling back to local seeds');
+      } else {
+        console.info(`[emotion_words] loaded ${data.length} words from Supabase`);
+      }
       setPlots(mergeWithSeedPlots(data));
       setSelectedId((prev) => {
         if (prev && data.some((plot) => plot.word_id === prev)) return prev;
-        return null;
+        return pickPreferredPlotId(data);
       });
     } catch (error) {
       console.error('Supabase load failed:', error);
@@ -126,9 +136,14 @@ function App() {
     return () => observer.disconnect();
   }, []);
 
+  const hasEmotionWords = useMemo(
+    () => plots.some((plot) => plot.sourceId != null),
+    [plots],
+  );
+
   const displayPlots = useMemo(
-    () => mergeExplorationDummyPlots(plots, isExplorationMode),
-    [plots, isExplorationMode],
+    () => mergeExplorationDummyPlots(plots, isExplorationMode && !hasEmotionWords),
+    [plots, isExplorationMode, hasEmotionWords],
   );
 
   const visiblePlots = useMemo(
@@ -151,7 +166,7 @@ function App() {
       if (prev && visiblePlots.some((plot) => plot.word_id === prev)) {
         return prev;
       }
-      return pickRandomPlotId(visiblePlots);
+      return pickPreferredPlotId(visiblePlots);
     });
   }, [isExplorationMode, isLoading, visiblePlots]);
 
@@ -760,7 +775,8 @@ function App() {
                   color: emotionUiTheme.textSecondary,
                 }}
               >
-                仮の説明テキストです。この単語が持つ「ヤバい」の感触、使われる場面、近いニュアンスをここに表示します。
+                {infoPanelPlot.meaning?.trim() ||
+                  'この単語の意味データはまだ登録されていません。'}
               </p>
 
               <dl
@@ -778,14 +794,18 @@ function App() {
                 }}
               >
                 <dt style={{ color: emotionUiTheme.textMuted }}>主感情</dt>
-                <dd style={{ margin: 0, fontWeight: 700 }}>{getEmotionById(infoPanelPlot.primaryId).label}</dd>
+                <dd style={{ margin: 0, fontWeight: 700 }}>
+                  {infoPanelPlot.primaryLabel ?? getEmotionById(infoPanelPlot.primaryId).label}
+                </dd>
                 <dt style={{ color: emotionUiTheme.textMuted }}>副感情</dt>
-                <dd style={{ margin: 0, fontWeight: 700 }}>{getEmotionById(infoPanelPlot.secondaryId).label}</dd>
+                <dd style={{ margin: 0, fontWeight: 700 }}>
+                  {infoPanelPlot.secondaryLabel ?? getEmotionById(infoPanelPlot.secondaryId).label}
+                </dd>
                 <dt style={{ color: emotionUiTheme.textMuted }}>強度</dt>
                 <dd style={{ margin: 0, fontWeight: 700 }}>{infoPanelPlot.intensity}</dd>
                 <dt style={{ color: emotionUiTheme.textMuted }}>種別</dt>
                 <dd style={{ margin: 0, fontWeight: 700 }}>
-                  {isExplorationDummyPlot(infoPanelPlot.word_id) ? '探索用ダミー' : '登録単語'}
+                  {getPlotKindLabel(infoPanelPlot)}
                 </dd>
               </dl>
 

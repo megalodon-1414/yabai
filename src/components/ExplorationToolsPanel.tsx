@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { UserPlotRow } from '../types/userPlot';
 import type { EmotionUiTheme } from '../utils/emotionUiTheme';
 import {
@@ -11,10 +11,10 @@ const UI_COLOR_TRANSITION =
   'border-color 320ms ease, background-color 320ms ease, color 320ms ease, box-shadow 320ms ease, border-radius 200ms ease';
 
 const TAB_GAP = 6;
-const TAB_HEIGHT = 44;
+const TAB_HEIGHT = 36;
 const TAB_RADIUS = 8;
 const PANEL_RADIUS = 9;
-const BRIDGE_GAP = 10;
+const BRIDGE_GAP = 6;
 const ICON_SIZE = 24;
 
 type ToolsTab = 'search' | 'tags' | 'game';
@@ -74,11 +74,32 @@ export function ExplorationToolsPanel({
 }: ExplorationToolsPanelProps) {
   const [activeTab, setActiveTab] = useState<ToolsTab | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const suggestions = useMemo(
     () => searchPlotsByQuery(plots, searchQuery),
     [plots, searchQuery],
   );
+
+  useEffect(() => {
+    if (!activeTab) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const root = rootRef.current;
+      if (!root) {
+        return;
+      }
+      if (event.target instanceof Node && root.contains(event.target)) {
+        return;
+      }
+      setActiveTab(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [activeTab]);
 
   const panelSurface = `linear-gradient(145deg, ${uiTheme.holoPanel}, rgba(0,0,0,0.08))`;
 
@@ -109,6 +130,7 @@ export function ExplorationToolsPanel({
 
   return (
     <div
+      ref={rootRef}
       aria-label="探索ツール"
       style={{
         width: `${width}px`,
@@ -161,15 +183,12 @@ export function ExplorationToolsPanel({
                   aria-hidden
                   style={{
                     position: 'absolute',
-                    left: tab.id === 'search' ? '-3px' : '-1px',
+                    left: '-1px',
                     right: '-1px',
                     top: '100%',
                     height: `${BRIDGE_GAP}px`,
                     background: panelSurface,
-                    borderLeft:
-                      tab.id === 'search'
-                        ? `3px solid ${outlineColor}`
-                        : `1px solid ${outlineColor}`,
+                    borderLeft: `1px solid ${outlineColor}`,
                     borderRight: `1px solid ${outlineColor}`,
                     boxSizing: 'border-box',
                     pointerEvents: 'none',
@@ -233,9 +252,8 @@ export function ExplorationToolsPanel({
               top: 0,
               bottom: 0,
               left: 0,
-              width: '3px',
+              width: '1px',
               backgroundColor: outlineColor,
-              borderRadius: activeTab === 'search' ? 0 : `${PANEL_RADIUS}px 0 0 ${PANEL_RADIUS}px`,
               pointerEvents: 'none',
             }}
           />
