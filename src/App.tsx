@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SpaceCanvas } from './components/SpaceCanvas';
-import { EmotionMinimap } from './components/EmotionMinimap';
+import { EmotionMinimap, MAP_WIDTH } from './components/EmotionMinimap';
+import { ExplorationToolsPanel } from './components/ExplorationToolsPanel';
 import { WordEditor } from './components/WordEditor';
 import { getEmotionById } from './data/emotions';
 import { usePlotSubmit } from './hooks/usePlotSubmit';
@@ -14,11 +15,17 @@ import {
 import { isExplorationDummyPlot, mergeExplorationDummyPlots } from './utils/explorationDummyPlots';
 import { EMOTION_INTENSITY_MAX } from './utils/emotionPlotBridge';
 import { pickRandomPlotId } from './utils/explorationMode';
-import { getBackgroundThemeColors, type AppBackgroundTheme } from './utils/appBackgroundTheme';
+import { type AppBackgroundTheme } from './utils/appBackgroundTheme';
 import { FLOW_LABEL_DURATION_MS, type PlotLabelDisplayMode } from './utils/plotLabelStyle';
 import { getExplorationInfoUiLayout } from './utils/explorationInfoUiLayout';
 import type { MinimapSyncState } from './utils/emotionMinimapLayout';
+import { getPrimaryEmotionColor } from './utils/emotionPlotBridge';
+import { DEFAULT_EMOTION_UI_ACCENT, getEmotionUiTheme } from './utils/emotionUiTheme';
+import { filterPlotsByTags, type PlotTagId } from './utils/plotTags';
 import { mergeWithSeedPlots } from './utils/seedPlots';
+
+const UI_COLOR_TRANSITION =
+  'border-color 320ms ease, background-color 320ms ease, color 320ms ease, box-shadow 320ms ease';
 
 function App() {
   const mainRef = useRef<HTMLElement>(null);
@@ -37,6 +44,7 @@ function App() {
   const [plotLabelDisplayMode, setPlotLabelDisplayMode] = useState<PlotLabelDisplayMode>('flow');
   const [backgroundTheme, setBackgroundTheme] = useState<AppBackgroundTheme>('dark');
   const [minimapSync, setMinimapSync] = useState<MinimapSyncState | null>(null);
+  const [selectedTagIds, setSelectedTagIds] = useState<Set<PlotTagId>>(() => new Set());
   const [isExplorationMode] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -123,6 +131,11 @@ function App() {
     [plots, isExplorationMode],
   );
 
+  const visiblePlots = useMemo(
+    () => filterPlotsByTags(displayPlots, selectedTagIds),
+    [displayPlots, selectedTagIds],
+  );
+
   useEffect(() => {
     if (selectedId) return;
     if (!isExplorationMode && plots[0]) {
@@ -132,20 +145,32 @@ function App() {
 
   useEffect(() => {
     if (!isExplorationMode || isLoading) return;
-    if (displayPlots.length === 0) return;
+    if (visiblePlots.length === 0) return;
 
     setSelectedId((prev) => {
-      if (prev && displayPlots.some((plot) => plot.word_id === prev)) {
+      if (prev && visiblePlots.some((plot) => plot.word_id === prev)) {
         return prev;
       }
-      return pickRandomPlotId(displayPlots);
+      return pickRandomPlotId(visiblePlots);
     });
-  }, [isExplorationMode, isLoading, displayPlots]);
+  }, [isExplorationMode, isLoading, visiblePlots]);
 
   const infoPanelPlot = useMemo(
     () => displayPlots.find((plot) => plot.word_id === infoPanelWordId) ?? null,
     [displayPlots, infoPanelWordId],
   );
+
+  const selectedPlot = useMemo(
+    () => displayPlots.find((plot) => plot.word_id === selectedId) ?? null,
+    [displayPlots, selectedId],
+  );
+
+  const emotionUiTheme = useMemo(() => {
+    const accent = selectedPlot
+      ? getPrimaryEmotionColor(selectedPlot.primaryId)
+      : DEFAULT_EMOTION_UI_ACCENT;
+    return getEmotionUiTheme(accent, backgroundTheme);
+  }, [selectedPlot, backgroundTheme]);
 
   const hoveredPlot = useMemo(
     () =>
@@ -205,6 +230,22 @@ function App() {
       setIsEditorOpen(true);
     }
   };
+
+  const handleToggleTag = useCallback((tagId: PlotTagId) => {
+    setSelectedTagIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(tagId)) {
+        next.delete(tagId);
+      } else {
+        next.add(tagId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleStartSearchGame = useCallback(() => {
+    // サーチゲーム本体は今後実装。UIのスタート導線のみ用意する。
+  }, []);
 
   const handlePlotDelete = (id: string) => {
     if (isExplorationDummyPlot(id)) {
@@ -279,10 +320,9 @@ function App() {
     mainSize.width > 0 &&
     mainSize.height > 0;
 
-  const backgroundColors = getBackgroundThemeColors(backgroundTheme);
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', color: backgroundColors.uiText, backgroundColor: backgroundColors.shell, overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', color: emotionUiTheme.uiText, backgroundColor: emotionUiTheme.shell, overflow: 'hidden', transition: UI_COLOR_TRANSITION }}>
       <style>
         {`
           @keyframes nextWordArrowPulse {
@@ -294,8 +334,8 @@ function App() {
             100% { transform: translateX(-120%); }
           }
           @keyframes currentWordArrowPulse {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(4px); }
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(-4px); }
           }
         `}
       </style>
@@ -307,13 +347,14 @@ function App() {
         )}
 
         <SpaceCanvas
-          plots={displayPlots}
+          plots={visiblePlots}
           selectedId={selectedId}
           explorationMode={isExplorationMode}
           flowLabelExpiresAt={flowLabelExpiresAt}
           flowLabelNow={flowLabelNow}
           plotLabelDisplayMode={plotLabelDisplayMode}
           backgroundTheme={backgroundTheme}
+          emotionUiTheme={emotionUiTheme}
           onSelectedScreenPosition={handleSelectedScreenPosition}
           onHoveredWordChange={handleHoveredWordChange}
           onHoveredWarpGateChange={handleHoveredWarpGateChange}
@@ -323,7 +364,29 @@ function App() {
         />
 
         {isExplorationMode && (
-          <EmotionMinimap syncState={minimapSync} backgroundTheme={backgroundTheme} />
+          <div
+            style={{
+              position: 'absolute',
+              top: '16px',
+              left: '16px',
+              zIndex: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              width: `${MAP_WIDTH}px`,
+            }}
+          >
+            <EmotionMinimap syncState={minimapSync} uiTheme={emotionUiTheme} />
+            <ExplorationToolsPanel
+              width={MAP_WIDTH}
+              uiTheme={emotionUiTheme}
+              plots={visiblePlots}
+              selectedTagIds={selectedTagIds}
+              onToggleTag={handleToggleTag}
+              onSelectWord={handleWordSelect}
+              onStartSearchGame={handleStartSearchGame}
+            />
+          </div>
         )}
 
         {isExplorationMode && (
@@ -343,14 +406,15 @@ function App() {
               onClick={toggleBackgroundTheme}
               style={{
                 padding: '8px 12px',
-                border: `1px solid ${backgroundColors.controlBorder}`,
+                border: `1px solid ${emotionUiTheme.controlBorder}`,
                 borderRadius: '8px',
-                backgroundColor: backgroundColors.controlBackground,
-                color: backgroundColors.controlText,
+                backgroundColor: emotionUiTheme.controlBackground,
+                color: emotionUiTheme.controlText,
                 fontSize: '0.78rem',
                 letterSpacing: '0.06em',
                 cursor: 'pointer',
                 backdropFilter: 'blur(10px)',
+                transition: UI_COLOR_TRANSITION,
               }}
             >
               背景: {backgroundTheme === 'dark' ? '黒' : '薄灰'}（B）
@@ -360,14 +424,15 @@ function App() {
               onClick={togglePlotLabelDisplayMode}
               style={{
                 padding: '8px 12px',
-                border: `1px solid ${backgroundColors.controlBorder}`,
+                border: `1px solid ${emotionUiTheme.controlBorder}`,
                 borderRadius: '8px',
-                backgroundColor: backgroundColors.controlBackground,
-                color: backgroundColors.controlText,
+                backgroundColor: emotionUiTheme.controlBackground,
+                color: emotionUiTheme.controlText,
                 fontSize: '0.78rem',
                 letterSpacing: '0.06em',
                 cursor: 'pointer',
                 backdropFilter: 'blur(10px)',
+                transition: UI_COLOR_TRANSITION,
               }}
             >
               ラベル: {plotLabelDisplayMode === 'nearby' ? '常時' : 'フロー'}（L）
@@ -393,9 +458,9 @@ function App() {
               <line
                 x1={selectedScreenPoint.x}
                 y1={selectedScreenPoint.y}
-                x2={currentWordPanel.x + currentWordPanel.width / 2}
+                x2={currentWordPanel.x}
                 y2={currentWordPanel.y + currentWordPanel.height / 2}
-                stroke="rgba(244, 236, 247, 0.62)"
+                stroke={emotionUiTheme.guideLine}
                 strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
               />
@@ -406,7 +471,7 @@ function App() {
                 y1={hoveredScreenPoint.y}
                 x2={nextWordPanel.x + nextWordPanel.guideAnchorX}
                 y2={nextWordPanel.y + nextWordPanel.guideAnchorY}
-                stroke="rgba(244, 236, 247, 0.44)"
+                stroke={emotionUiTheme.guideLineHover}
                 strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
               />
@@ -424,16 +489,16 @@ function App() {
               width: `${nextWordPanel.width}px`,
               height: `${nextWordLabel ? nextWordPanel.expandedHeight : nextWordPanel.collapsedHeight}px`,
               padding: `${nextWordPanel.padding}px`,
-              border: '1px solid rgba(195, 155, 211, 0.32)',
-              borderLeft: '3px solid rgba(195, 155, 211, 0.62)',
+              border: `1px solid ${emotionUiTheme.accentBorder}`,
+              borderLeft: `3px solid ${emotionUiTheme.accentBorderStrong}`,
               borderRadius: `${nextWordPanel.borderRadius}px`,
-              backgroundColor: 'rgba(12, 10, 16, 0.88)',
-              boxShadow: '0 18px 40px rgba(0, 0, 0, 0.34), inset 8px 0 18px rgba(255, 255, 255, 0.03)',
+              backgroundColor: emotionUiTheme.panelBackground,
+              boxShadow: emotionUiTheme.panelShadow,
               backdropFilter: 'blur(12px)',
-              color: '#f4ecf7',
+              color: emotionUiTheme.textPrimary,
               opacity: isInfoPanelVisible ? 1 : 0,
               overflow: 'hidden',
-              transition: 'opacity 150ms ease, height 160ms ease',
+              transition: `opacity 150ms ease, height 160ms ease, ${UI_COLOR_TRANSITION}`,
               pointerEvents: 'none',
             }}
           >
@@ -456,7 +521,7 @@ function App() {
                     fontSize: nextWordPanel.tickerFontSize,
                     letterSpacing: '0.14em',
                     lineHeight: `${nextWordPanel.tickerHeight}px`,
-                    color: '#c39bd3',
+                    color: emotionUiTheme.accentMuted,
                     whiteSpace: 'nowrap',
                     animation: 'nextWordTicker 3.8s linear infinite',
                   }}
@@ -471,7 +536,7 @@ function App() {
                   height: 0,
                   borderTop: `${nextWordPanel.arrowBorderY}px solid transparent`,
                   borderBottom: `${nextWordPanel.arrowBorderY}px solid transparent`,
-                  borderRight: `${nextWordPanel.arrowBorderX}px solid #c39bd3`,
+                  borderRight: `${nextWordPanel.arrowBorderX}px solid ${emotionUiTheme.accentMuted}`,
                   opacity: nextWordLabel ? 1 : 0.45,
                   animation: nextWordLabel ? 'nextWordArrowPulse 900ms ease-in-out infinite' : 'none',
                   transition: 'opacity 160ms ease',
@@ -500,7 +565,7 @@ function App() {
                   fontWeight: 700,
                   lineHeight: 1.25,
                   letterSpacing: '0.06em',
-                  color: '#f4ecf7',
+                  color: emotionUiTheme.textPrimary,
                   overflow: 'hidden',
                   maxHeight: `${nextWordPanel.contentMaxHeight}px`,
                 }}
@@ -515,7 +580,7 @@ function App() {
                   fontSize: nextWordPanel.subLabelFontSize,
                   letterSpacing: '0.12em',
                   lineHeight: 1.2,
-                  color: '#c39bd3',
+                  color: emotionUiTheme.accentMuted,
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -568,16 +633,16 @@ function App() {
               minHeight: `${currentWordPanel.height}px`,
               zIndex: 2,
               padding: `${currentWordPanel.paddingY}px ${currentWordPanel.paddingX}px`,
-              border: '1px solid rgba(214, 187, 226, 0.36)',
-              borderLeft: '4px solid rgba(195, 155, 211, 0.72)',
+              border: `1px solid ${emotionUiTheme.accentBorder}`,
+              borderLeft: `4px solid ${emotionUiTheme.accentBorderStrong}`,
               borderRadius: `${currentWordPanel.borderRadius}px`,
-              backgroundColor: 'rgba(12, 10, 16, 0.9)',
-              boxShadow: '0 18px 40px rgba(0, 0, 0, 0.38), inset 10px 0 24px rgba(255, 255, 255, 0.035)',
+              backgroundColor: emotionUiTheme.panelBackground,
+              boxShadow: emotionUiTheme.panelShadow,
               backdropFilter: 'blur(12px)',
-              color: '#f4ecf7',
+              color: emotionUiTheme.textPrimary,
               pointerEvents: 'none',
               opacity: isInfoPanelVisible ? 1 : 0,
-              transition: 'opacity 150ms ease',
+              transition: `opacity 150ms ease, ${UI_COLOR_TRANSITION}`,
             }}
           >
             <div
@@ -598,7 +663,7 @@ function App() {
                   alignItems: 'flex-start',
                   gap: `${currentWordPanel.innerGap}px`,
                   paddingLeft: `${currentWordPanel.paddingLeft}px`,
-                  borderLeft: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderLeft: `1px solid ${emotionUiTheme.divider}`,
                 }}
               >
                 <div
@@ -614,9 +679,9 @@ function App() {
                       display: 'block',
                       width: 0,
                       height: 0,
-                      borderLeft: `${currentWordPanel.arrowBorder}px solid transparent`,
-                      borderRight: `${currentWordPanel.arrowBorder}px solid transparent`,
-                      borderTop: `${currentWordPanel.arrowBorder + 4}px solid #c39bd3`,
+                      borderTop: `${currentWordPanel.arrowBorder}px solid transparent`,
+                      borderBottom: `${currentWordPanel.arrowBorder}px solid transparent`,
+                      borderRight: `${currentWordPanel.arrowBorder + 4}px solid ${emotionUiTheme.accentMuted}`,
                       animation: 'currentWordArrowPulse 900ms ease-in-out infinite',
                     }}
                   />
@@ -627,7 +692,7 @@ function App() {
                       margin: 0,
                       fontSize: currentWordPanel.sectionLabelFontSize,
                       letterSpacing: '0.18em',
-                      color: '#c39bd3',
+                      color: emotionUiTheme.accentMuted,
                     }}
                   >
                     現在の語
@@ -660,7 +725,7 @@ function App() {
                         fontSize: currentWordPanel.tickerFontSize,
                         letterSpacing: '0.14em',
                         lineHeight: `${currentWordPanel.tickerHeight}px`,
-                        color: '#c39bd3',
+                        color: emotionUiTheme.accentMuted,
                         whiteSpace: 'nowrap',
                         animation: 'nextWordTicker 4.2s linear infinite',
                       }}
@@ -692,7 +757,7 @@ function App() {
                   fontSize: currentWordPanel.bodyFontSize,
                   lineHeight: 1.9,
                   letterSpacing: '0.06em',
-                  color: '#d8c7df',
+                  color: emotionUiTheme.textSecondary,
                 }}
               >
                 仮の説明テキストです。この単語が持つ「ヤバい」の感触、使われる場面、近いニュアンスをここに表示します。
@@ -712,13 +777,13 @@ function App() {
                   fontSize: currentWordPanel.dlFontSize,
                 }}
               >
-                <dt style={{ color: '#9f8aaa' }}>主感情</dt>
+                <dt style={{ color: emotionUiTheme.textMuted }}>主感情</dt>
                 <dd style={{ margin: 0, fontWeight: 700 }}>{getEmotionById(infoPanelPlot.primaryId).label}</dd>
-                <dt style={{ color: '#9f8aaa' }}>副感情</dt>
+                <dt style={{ color: emotionUiTheme.textMuted }}>副感情</dt>
                 <dd style={{ margin: 0, fontWeight: 700 }}>{getEmotionById(infoPanelPlot.secondaryId).label}</dd>
-                <dt style={{ color: '#9f8aaa' }}>強度</dt>
+                <dt style={{ color: emotionUiTheme.textMuted }}>強度</dt>
                 <dd style={{ margin: 0, fontWeight: 700 }}>{infoPanelPlot.intensity}</dd>
-                <dt style={{ color: '#9f8aaa' }}>種別</dt>
+                <dt style={{ color: emotionUiTheme.textMuted }}>種別</dt>
                 <dd style={{ margin: 0, fontWeight: 700 }}>
                   {isExplorationDummyPlot(infoPanelPlot.word_id) ? '探索用ダミー' : '登録単語'}
                 </dd>
@@ -740,7 +805,7 @@ function App() {
                     margin: 0,
                     fontSize: currentWordPanel.metaFontSize,
                     letterSpacing: '0.14em',
-                    color: '#9f8aaa',
+                    color: emotionUiTheme.textMuted,
                   }}
                 >
                   強度
@@ -751,7 +816,7 @@ function App() {
                     height: `${currentWordPanel.intensityBarHeight}px`,
                     overflow: 'hidden',
                     borderRadius: '999px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                    backgroundColor: emotionUiTheme.divider,
                     display: 'flex',
                     alignItems: 'flex-end',
                   }}
@@ -761,7 +826,7 @@ function App() {
                       width: '100%',
                       height: `${(infoPanelPlot.intensity / EMOTION_INTENSITY_MAX) * 100}%`,
                       borderRadius: '999px',
-                      background: 'linear-gradient(180deg, #45f3ff, #9b59b6)',
+                      background: `linear-gradient(180deg, ${emotionUiTheme.intensityGradientStart}, ${emotionUiTheme.intensityGradientEnd})`,
                     }}
                   />
                 </div>

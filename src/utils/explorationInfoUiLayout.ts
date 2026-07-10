@@ -16,7 +16,7 @@ function scaleRem(value: number, scale: number): string {
 
 export interface ExplorationInfoUiLayout {
   scale: number;
-  uiGroupLeftPercent: number;
+  uiGroupRightMargin: number;
   nextWordPanel: {
     x: number;
     y: number;
@@ -77,9 +77,11 @@ export function getExplorationInfoUiLayout(
   const scale = clamp(minDim / BASE_MIN_DIM, MIN_SCALE, MAX_SCALE);
   const s = (value: number) => scaleValue(value, scale);
 
-  const uiGroupLeftPercent = 48;
-  const uiGroupLeft = viewportWidth * (uiGroupLeftPercent / 100);
-  const uiGroupTop = Math.max(s(16), viewportHeight * 0.5 - s(180));
+  const uiGroupRightMargin = Math.max(s(32), viewportWidth * 0.06);
+  const currentWordWidth = s(300);
+  const currentWordHeight = s(360);
+  const currentWordX = viewportWidth - currentWordWidth - uiGroupRightMargin;
+  const uiGroupTop = Math.max(s(16), viewportHeight * 0.5 - currentWordHeight / 2);
   const panelGap = s(24);
 
   const nextWordWidth = s(80);
@@ -92,14 +94,11 @@ export function getExplorationInfoUiLayout(
     nextExpandedMax,
   );
 
-  const currentWordWidth = s(300);
-  const currentWordHeight = s(360);
-
   return {
     scale,
-    uiGroupLeftPercent,
+    uiGroupRightMargin,
     nextWordPanel: {
-      x: uiGroupLeft,
+      x: currentWordX - panelGap - nextWordWidth,
       y: uiGroupTop,
       width: nextWordWidth,
       collapsedHeight: nextCollapsedHeight,
@@ -116,12 +115,12 @@ export function getExplorationInfoUiLayout(
       contentGap: s(12),
       arrowBorderY: s(5),
       arrowBorderX: s(9),
-      guideAnchorX: nextWordWidth - s(12),
+      guideAnchorX: s(12),
       guideAnchorY: s(22),
       contentMaxHeight: nextExpandedHeight - s(52),
     },
     currentWordPanel: {
-      x: uiGroupLeft + nextWordWidth + panelGap,
+      x: currentWordX,
       y: uiGroupTop,
       width: currentWordWidth,
       height: currentWordHeight,

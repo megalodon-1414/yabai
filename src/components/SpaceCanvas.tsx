@@ -11,8 +11,8 @@ import {
   plotPositionFromRow,
   type PlotOrbitOverride,
 } from '../utils/plotFromUserPlot';
-import type { AppBackgroundTheme } from '../utils/appBackgroundTheme';
-import { getBackgroundThemeColors } from '../utils/appBackgroundTheme';
+import type { EmotionUiTheme } from '../utils/emotionUiTheme';
+import { getBackgroundThemeColors, type AppBackgroundTheme } from '../utils/appBackgroundTheme';
 import type { PlotLabelDisplayMode } from '../utils/plotLabelStyle';
 import { applySelectionViewOffset, clearSelectionViewOffset } from '../utils/cameraFocus';
 import { setAtmosphereFogColor } from '../utils/plotAtmosphere';
@@ -64,6 +64,7 @@ interface SpaceCanvasProps {
   flowLabelNow?: number;
   plotLabelDisplayMode?: PlotLabelDisplayMode;
   backgroundTheme?: AppBackgroundTheme;
+  emotionUiTheme?: EmotionUiTheme;
   onSelectedScreenPosition?: (point: { x: number; y: number; visible: boolean } | null) => void;
   onHoveredWordChange?: (wordId: string | null) => void;
   onHoveredWarpGateChange?: (label: string | null) => void;
@@ -452,6 +453,7 @@ export function SpaceCanvas({
   flowLabelNow = 0,
   plotLabelDisplayMode = 'flow',
   backgroundTheme = 'dark',
+  emotionUiTheme,
   onSelectedScreenPosition,
   onHoveredWordChange,
   onHoveredWarpGateChange,
@@ -705,13 +707,14 @@ export function SpaceCanvas({
   }, [selectedId]);
 
   const backgroundColors = getBackgroundThemeColors(backgroundTheme);
+  const canvasBackground = emotionUiTheme?.canvas ?? backgroundColors.canvas;
 
   useEffect(() => {
-    setAtmosphereFogColor(backgroundColors.canvas);
-  }, [backgroundColors.canvas]);
+    setAtmosphereFogColor(canvasBackground);
+  }, [canvasBackground]);
 
   return (
-    <div style={{ width: '100%', height: '100%', backgroundColor: backgroundColors.canvas, position: 'relative' }}>
+    <div style={{ width: '100%', height: '100%', backgroundColor: canvasBackground, position: 'relative', transition: 'background-color 320ms ease' }}>
       {!explorationMode && (
         <button
           type="button"

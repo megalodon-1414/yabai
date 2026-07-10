@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { BASIC_EMOTIONS } from '../data/emotions';
-import type { AppBackgroundTheme } from '../utils/appBackgroundTheme';
+import type { EmotionUiTheme } from '../utils/emotionUiTheme';
 import { getEmotionPositionInfo } from '../utils/emotionCoordinates';
 import {
   MINIMAP_DEFAULT_CAMERA,
@@ -14,33 +14,20 @@ import {
   type MinimapSyncState,
 } from '../utils/emotionMinimapLayout';
 
-const MAP_WIDTH = 204;
-const VIEWPORT = 180;
-const PANEL_RADIUS = 10;
+const VIEWPORT = 156;
+const SIDE_LABEL_WIDTH = 44;
+const INNER_GAP = 8;
+const PANEL_PADDING = 10;
+export const MAP_WIDTH = VIEWPORT + INNER_GAP + SIDE_LABEL_WIDTH + PANEL_PADDING * 2;
+const PANEL_RADIUS = 9;
 const FIT_MARGIN = 1.14;
 
-const HOLO = {
-  dark: {
-    primary: '#5dffe8',
-    panel: 'rgba(4, 18, 24, 0.42)',
-    border: 'rgba(93, 255, 232, 0.55)',
-    glow: 'rgba(69, 243, 255, 0.35)',
-    text: '#b8fff6',
-    subtext: 'rgba(184, 255, 246, 0.72)',
-  },
-  light: {
-    primary: '#0099aa',
-    panel: 'rgba(220, 248, 252, 0.55)',
-    border: 'rgba(0, 130, 150, 0.5)',
-    glow: 'rgba(0, 150, 170, 0.22)',
-    text: '#005566',
-    subtext: 'rgba(0, 70, 80, 0.75)',
-  },
-} as const;
+const UI_COLOR_TRANSITION =
+  'border-color 320ms ease, background-color 320ms ease, color 320ms ease, box-shadow 320ms ease';
 
 interface EmotionMinimapProps {
   syncState: MinimapSyncState | null;
-  backgroundTheme: AppBackgroundTheme;
+  uiTheme: EmotionUiTheme;
 }
 
 function computeFitDistance(camera: THREE.PerspectiveCamera, boundingRadius: number): number {
@@ -176,7 +163,13 @@ function MinimapEmotionNodes() {
   );
 }
 
-function MinimapFocusMarker({ syncState }: { syncState: MinimapSyncState | null }) {
+function MinimapFocusMarker({
+  syncState,
+  markerColor,
+}: {
+  syncState: MinimapSyncState | null;
+  markerColor: string;
+}) {
   const markerRef = useRef<THREE.Group>(null);
   const ringRef = useRef<THREE.Mesh>(null);
   const reticleRef = useRef<THREE.Mesh>(null);
@@ -208,7 +201,7 @@ function MinimapFocusMarker({ syncState }: { syncState: MinimapSyncState | null 
     <group ref={markerRef} visible={false}>
       <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.11, 0.145, 32]} />
-        <meshBasicMaterial color="#5dffe8" transparent opacity={0.5} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
+        <meshBasicMaterial color={markerColor} transparent opacity={0.5} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <mesh ref={reticleRef} rotation={[Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.07, 0.078, 4]} />
@@ -216,11 +209,11 @@ function MinimapFocusMarker({ syncState }: { syncState: MinimapSyncState | null 
       </mesh>
       <mesh>
         <sphereGeometry args={[0.058, 12, 12]} />
-        <meshBasicMaterial color="#5dffe8" transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} />
+        <meshBasicMaterial color={markerColor} transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <mesh>
         <sphereGeometry args={[0.038, 10, 10]} />
-        <meshBasicMaterial color="#5dffe8" transparent opacity={0.95} blending={THREE.AdditiveBlending} depthWrite={false} />
+        <meshBasicMaterial color={markerColor} transparent opacity={0.95} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <mesh>
         <sphereGeometry args={[0.018, 8, 8]} />
@@ -230,12 +223,18 @@ function MinimapFocusMarker({ syncState }: { syncState: MinimapSyncState | null 
   );
 }
 
-function MinimapViewRay({ syncState }: { syncState: MinimapSyncState | null }) {
+function MinimapViewRay({
+  syncState,
+  markerColor,
+}: {
+  syncState: MinimapSyncState | null;
+  markerColor: string;
+}) {
   const line = useMemo(() => {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
     const material = new THREE.LineBasicMaterial({
-      color: '#5dffe8',
+      color: markerColor,
       transparent: true,
       opacity: 0.85,
       blending: THREE.AdditiveBlending,
@@ -244,7 +243,7 @@ function MinimapViewRay({ syncState }: { syncState: MinimapSyncState | null }) {
     const object = new THREE.Line(geometry, material);
     object.visible = false;
     return object;
-  }, []);
+  }, [markerColor]);
 
   useEffect(
     () => () => {
@@ -285,9 +284,11 @@ function MinimapViewRay({ syncState }: { syncState: MinimapSyncState | null }) {
 function MinimapScene({
   syncState,
   holoColor,
+  markerColor,
 }: {
   syncState: MinimapSyncState | null;
   holoColor: string;
+  markerColor: string;
 }) {
   return (
     <>
@@ -295,15 +296,15 @@ function MinimapScene({
       <ambientLight intensity={0.45} />
       <MinimapWireframe holoColor={holoColor} />
       <MinimapEmotionNodes />
-      <MinimapFocusMarker syncState={syncState} />
-      <MinimapViewRay syncState={syncState} />
+      <MinimapFocusMarker syncState={syncState} markerColor={markerColor} />
+      <MinimapViewRay syncState={syncState} markerColor={markerColor} />
     </>
   );
 }
 
 function MapPinIcon({ color }: { color: string }) {
   return (
-    <svg width="18" height="21" viewBox="0 0 13 16" fill="none" aria-hidden style={{ flexShrink: 0 }}>
+    <svg width="16" height="18" viewBox="0 0 13 16" fill="none" aria-hidden style={{ flexShrink: 0 }}>
       <path
         d="M6.5 0C3.46 0 1 2.46 1 5.5c0 4.06 5.5 10.5 5.5 10.5S12 9.56 12 5.5C12 2.46 9.54 0 6.5 0Z"
         fill={color}
@@ -314,9 +315,7 @@ function MapPinIcon({ color }: { color: string }) {
   );
 }
 
-export function EmotionMinimap({ syncState, backgroundTheme }: EmotionMinimapProps) {
-  const holo = HOLO[backgroundTheme];
-
+export function EmotionMinimap({ syncState, uiTheme }: EmotionMinimapProps) {
   const positionInfo = useMemo(() => {
     if (!syncState?.focusPosition || !syncState.primaryId) {
       return null;
@@ -329,12 +328,10 @@ export function EmotionMinimap({ syncState, backgroundTheme }: EmotionMinimapPro
       aria-label="感情空間ミニマップ"
       className="emotion-minimap-holo"
       style={{
-        position: 'absolute',
-        top: '16px',
-        right: '16px',
-        zIndex: 2,
+        position: 'relative',
         width: `${MAP_WIDTH}px`,
         pointerEvents: 'none',
+        transition: UI_COLOR_TRANSITION,
       }}
     >
       <style>
@@ -365,134 +362,152 @@ export function EmotionMinimap({ syncState, backgroundTheme }: EmotionMinimapPro
       <div
         style={{
           position: 'relative',
-          padding: '12px',
+          padding: `${PANEL_PADDING}px`,
           borderRadius: `${PANEL_RADIUS}px`,
-          background: `linear-gradient(145deg, ${holo.panel}, rgba(0,0,0,0.08))`,
-          border: `1px solid ${holo.border}`,
-          boxShadow: `0 0 18px ${holo.glow}, inset 0 0 20px rgba(93, 255, 232, 0.06)`,
+          background: `linear-gradient(145deg, ${uiTheme.holoPanel}, rgba(0,0,0,0.08))`,
+          border: `1px solid ${uiTheme.accentBorder}`,
+          borderRight: `3px solid ${uiTheme.accentBorderStrong}`,
+          boxShadow: `0 0 18px ${uiTheme.holoGlow}, inset 0 0 20px ${uiTheme.panelInset}`,
           backdropFilter: 'blur(14px) saturate(1.4)',
           animation: 'holoFlicker 6s linear infinite',
+          transition: UI_COLOR_TRANSITION,
         }}
       >
         <div
           style={{
-            position: 'relative',
-            width: `${VIEWPORT}px`,
-            height: `${VIEWPORT}px`,
-            borderRadius: '50%',
-            overflow: 'hidden',
-            border: `1px solid ${holo.border}`,
-            boxShadow: `inset 0 0 20px ${holo.glow}`,
-          }}
-        >
-          <Canvas
-            camera={{ position: MINIMAP_DEFAULT_CAMERA, fov: 36, near: 0.05, far: 20 }}
-            dpr={[1, 1.5]}
-            gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
-            style={{ width: '100%', height: '100%', background: 'transparent' }}
-            onCreated={({ gl }) => {
-              gl.setClearColor(0x000000, 0);
-            }}
-          >
-            <MinimapScene syncState={syncState} holoColor={holo.primary} />
-          </Canvas>
-
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: `repeating-linear-gradient(
-                0deg,
-                transparent,
-                transparent 2px,
-                rgba(93, 255, 232, 0.04) 2px,
-                rgba(93, 255, 232, 0.04) 4px
-              )`,
-              pointerEvents: 'none',
-            }}
-          />
-
-          <div
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              height: '28%',
-              background: 'linear-gradient(180deg, transparent, rgba(93, 255, 232, 0.12), transparent)',
-              animation: 'holoScan 3.8s linear infinite',
-              pointerEvents: 'none',
-              mixBlendMode: 'screen',
-            }}
-          />
-
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'radial-gradient(circle at center, transparent 38%, rgba(0, 12, 18, 0.62) 100%)',
-              pointerEvents: 'none',
-            }}
-          />
-        </div>
-
-        <div
-          style={{
-            marginTop: '10px',
-            width: `${VIEWPORT}px`,
-            padding: '0 2px',
-            boxSizing: 'border-box',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '10px',
+            alignItems: 'stretch',
+            gap: `${INNER_GAP}px`,
           }}
         >
+          <div style={{ width: `${VIEWPORT}px`, flexShrink: 0 }}>
+            <div
+              style={{
+                position: 'relative',
+                width: `${VIEWPORT}px`,
+                height: `${VIEWPORT}px`,
+                borderRadius: '50%',
+                overflow: 'hidden',
+                border: `1px solid ${uiTheme.holoBorder}`,
+                boxShadow: `inset 0 0 20px ${uiTheme.holoGlow}`,
+                transition: UI_COLOR_TRANSITION,
+              }}
+            >
+              <Canvas
+                camera={{ position: MINIMAP_DEFAULT_CAMERA, fov: 36, near: 0.05, far: 20 }}
+                dpr={[1, 1.5]}
+                gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
+                style={{ width: '100%', height: '100%', background: 'transparent' }}
+                onCreated={({ gl }) => {
+                  gl.setClearColor(0x000000, 0);
+                }}
+              >
+                <MinimapScene syncState={syncState} holoColor={uiTheme.holoPrimary} markerColor={uiTheme.markerColor} />
+              </Canvas>
+
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: `repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 2px,
+                    ${uiTheme.holoStripe} 2px,
+                    ${uiTheme.holoStripe} 4px
+                  )`,
+                  pointerEvents: 'none',
+                }}
+              />
+
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  height: '28%',
+                  background: `linear-gradient(180deg, transparent, ${uiTheme.holoScan}, transparent)`,
+                  animation: 'holoScan 3.8s linear infinite',
+                  pointerEvents: 'none',
+                  mixBlendMode: 'screen',
+                }}
+              />
+
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: `radial-gradient(circle at center, transparent 38%, ${uiTheme.panelBackground} 100%)`,
+                  pointerEvents: 'none',
+                }}
+              />
+            </div>
+          </div>
+
           <div
             style={{
+              width: `${SIDE_LABEL_WIDTH}px`,
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
-              gap: '5px',
-              flexShrink: 0,
+              gap: '8px',
+              padding: '10px 0 2px 8px',
+              borderLeft: `1px solid ${uiTheme.divider}`,
             }}
           >
-            <MapPinIcon color={holo.primary} />
+            <MapPinIcon color={uiTheme.holoPrimary} />
             <p
               style={{
                 margin: 0,
-                fontSize: '1.47rem',
+                writingMode: 'vertical-rl',
+                textOrientation: 'mixed',
+                fontSize: '1.05rem',
                 fontWeight: 700,
-                letterSpacing: '0.08em',
-                color: holo.text,
-                textShadow: `0 0 8px ${holo.glow}`,
+                letterSpacing: '0.14em',
+                color: uiTheme.holoText,
+                textShadow: `0 0 8px ${uiTheme.holoGlow}`,
                 whiteSpace: 'nowrap',
+                transition: UI_COLOR_TRANSITION,
               }}
             >
               {positionInfo?.primaryEmotionLabel ?? '—'}
             </p>
-          </div>
-          <div
-            style={{
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-              fontSize: '0.46rem',
-              letterSpacing: '0.02em',
-              color: holo.subtext,
-              textAlign: 'right',
-              lineHeight: 1.4,
-              flexShrink: 1,
-              minWidth: 0,
-            }}
-          >
-            {positionInfo ? (
-              <>
-                <div style={{ whiteSpace: 'nowrap' }}>{positionInfo.coordinateLines[0]}</div>
-                <div style={{ whiteSpace: 'nowrap' }}>{positionInfo.coordinateLines[1]}</div>
-              </>
-            ) : (
-              <>
-                <div>— — —</div>
-                <div>— — —</div>
-              </>
-            )}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'row-reverse',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                gap: '5px',
+                marginTop: '2px',
+                paddingTop: '6px',
+                borderTop: `1px solid ${uiTheme.holoBorder}`,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontSize: '0.34rem',
+                letterSpacing: '0.08em',
+                color: uiTheme.holoSubtext,
+                transition: UI_COLOR_TRANSITION,
+              }}
+            >
+              <span
+                style={{
+                  writingMode: 'vertical-rl',
+                  textOrientation: 'mixed',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {positionInfo?.coordinateLines[0] ?? '— — —'}
+              </span>
+              <span
+                style={{
+                  writingMode: 'vertical-rl',
+                  textOrientation: 'mixed',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {positionInfo?.coordinateLines[1] ?? '— — —'}
+              </span>
+            </div>
           </div>
         </div>
       </div>
