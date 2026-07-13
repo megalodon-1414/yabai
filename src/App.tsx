@@ -14,8 +14,12 @@ import {
 } from './utils/plotHelpers';
 import { isExplorationDummyPlot, mergeExplorationDummyPlots } from './utils/explorationDummyPlots';
 import { canMoveWithinEmotionSystem } from './utils/plotFromUserPlot';
+import {
+  ensureEmotionSystemLandings,
+  findPlotByKey,
+  getPlotKey,
+} from './utils/plotIdentity';
 import { EMOTION_INTENSITY_MAX } from './utils/emotionPlotBridge';
-import { pickRandomPlotId } from './utils/explorationMode';
 import { type AppBackgroundTheme } from './utils/appBackgroundTheme';
 import { FLOW_LABEL_DURATION_MS, type PlotLabelDisplayMode } from './utils/plotLabelStyle';
 import { getExplorationInfoUiLayout } from './utils/explorationInfoUiLayout';
@@ -40,7 +44,9 @@ const UI_COLOR_TRANSITION =
 
 function pickPreferredPlotId(plots: UserPlotRow[]): string | null {
   const registered = plots.filter((plot) => !isExplorationDummyPlot(plot.word_id));
-  return pickRandomPlotId(registered.length > 0 ? registered : plots);
+  const pool = registered.length > 0 ? registered : plots;
+  const plot = pool[Math.floor(Math.random() * pool.length)];
+  return plot ? getPlotKey(plot) : null;
 }
 
 function App() {
@@ -123,7 +129,7 @@ function App() {
       }
       setPlots(mergeWithSeedPlots(data));
       setSelectedId((prev) => {
-        if (prev && data.some((plot) => plot.word_id === prev)) return prev;
+        if (prev && findPlotByKey(data, prev)) return prev;
         return pickPreferredPlotId(data);
       });
     } catch (error) {
@@ -159,10 +165,10 @@ function App() {
     [plots],
   );
 
-  const displayPlots = useMemo(
-    () => mergeExplorationDummyPlots(plots, isExplorationMode && !hasEmotionWords),
-    [plots, isExplorationMode, hasEmotionWords],
-  );
+  const displayPlots = useMemo(() => {
+    const merged = mergeExplorationDummyPlots(plots, isExplorationMode && !hasEmotionWords);
+    return isExplorationMode ? ensureEmotionSystemLandings(merged) : merged;
+  }, [plots, isExplorationMode, hasEmotionWords]);
 
   const visiblePlots = useMemo(
     () => filterPlotsByTags(displayPlots, selectedTagIds),
@@ -172,7 +178,7 @@ function App() {
   useEffect(() => {
     if (selectedId) return;
     if (!isExplorationMode && plots[0]) {
-      setSelectedId(plots[0].word_id);
+      setSelectedId(getPlotKey(plots[0]));
     }
   }, [plots, selectedId, isExplorationMode]);
 
@@ -181,7 +187,7 @@ function App() {
     if (visiblePlots.length === 0) return;
 
     setSelectedId((prev) => {
-      if (prev && visiblePlots.some((plot) => plot.word_id === prev)) {
+      if (prev && findPlotByKey(visiblePlots, prev)) {
         return prev;
       }
       return pickPreferredPlotId(visiblePlots);
@@ -189,12 +195,12 @@ function App() {
   }, [isExplorationMode, isLoading, visiblePlots]);
 
   const infoPanelPlot = useMemo(
-    () => displayPlots.find((plot) => plot.word_id === infoPanelWordId) ?? null,
+    () => findPlotByKey(displayPlots, infoPanelWordId),
     [displayPlots, infoPanelWordId],
   );
 
   const selectedPlot = useMemo(
-    () => displayPlots.find((plot) => plot.word_id === selectedId) ?? null,
+    () => findPlotByKey(displayPlots, selectedId),
     [displayPlots, selectedId],
   );
 
@@ -208,7 +214,7 @@ function App() {
   const hoveredPlot = useMemo(
     () =>
       !hoveredWarpGateLabel && hoveredWordId && hoveredWordId !== selectedId
-        ? displayPlots.find((plot) => plot.word_id === hoveredWordId) ?? null
+        ? findPlotByKey(displayPlots, hoveredWordId)
         : null,
     [displayPlots, hoveredWarpGateLabel, hoveredWordId, selectedId],
   );
@@ -246,7 +252,7 @@ function App() {
     }
     if (previousId && previousId !== updated.word_id) {
       setPlots((prev) => replacePlotId(prev, previousId, updated));
-      setSelectedId(updated.word_id);
+      setSelectedId(getPlotKey(updated));
       return;
     }
 
@@ -259,8 +265,8 @@ function App() {
 
   const handleWordSelect = (id: string, options?: { viaWarp?: boolean }) => {
     if (isExplorationMode && !options?.viaWarp && selectedId) {
-      const current = displayPlots.find((plot) => plot.word_id === selectedId);
-      const next = displayPlots.find((plot) => plot.word_id === id);
+      const current = findPlotByKey(displayPlots, selectedId);
+      const next = findPlotByKey(displayPlots, id);
       if (current && next) {
         // 星系間の移動はワープゲート経由のみ
         if (current.primaryId !== next.primaryId) {
@@ -274,8 +280,11 @@ function App() {
     }
 
     setSelectedId(id);
-    if (!isExplorationMode && !isExplorationDummyPlot(id)) {
-      setIsEditorOpen(true);
+    if (!isExplorationMode) {
+      const selected = findPlotByKey(displayPlots, id);
+      if (selected && !isExplorationDummyPlot(selected.word_id)) {
+        setIsEditorOpen(true);
+      }
     }
   };
 
@@ -298,9 +307,9 @@ function App() {
     }
 
     const current = excludeId
-      ? plotsForGame.find((plot) => plot.word_id === excludeId)
+      ? findPlotByKey(plotsForGame, excludeId)
       : null;
-    const target = plotsForGame.find((plot) => plot.word_id === targetId);
+    const target = findPlotByKey(plotsForGame, targetId);
     const adjacency = buildWarpGateAdjacency(plotsForGame);
     const initialDistance = current && target
       ? warpJourneyDistance(plotsForGame, current, target, adjacency)
@@ -334,7 +343,7 @@ function App() {
 
   const searchGameTargetPlot = useMemo(
     () => (searchGameTargetId
-      ? visiblePlots.find((plot) => plot.word_id === searchGameTargetId) ?? null
+      ? findPlotByKey(visiblePlots, searchGameTargetId)
       : null),
     [searchGameTargetId, visiblePlots],
   );
@@ -379,17 +388,18 @@ function App() {
     if (!searchGameTargetId) {
       return;
     }
-    if (!visiblePlots.some((plot) => plot.word_id === searchGameTargetId)) {
+    if (!findPlotByKey(visiblePlots, searchGameTargetId)) {
       handleQuitSearchGame();
     }
   }, [handleQuitSearchGame, searchGameTargetId, visiblePlots]);
 
   const handlePlotDelete = (id: string) => {
-    if (isExplorationDummyPlot(id)) {
+    const plot = findPlotByKey(plots, id);
+    if (!plot || isExplorationDummyPlot(plot.word_id)) {
       return;
     }
-    setPlots((prev) => removePlotById(prev, id));
-    setSelectedId((prev) => (prev === id ? null : prev));
+    setPlots((prev) => removePlotById(prev, plot.word_id));
+    setSelectedId((prev) => (prev === id || prev === getPlotKey(plot) ? null : prev));
   };
 
   const handleSelectedScreenPosition = useCallback(

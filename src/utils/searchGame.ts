@@ -1,6 +1,7 @@
 import type { EmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import { isPurePlot, rowToEmotionParams } from './emotionPlotBridge';
+import { getPlotKey } from './plotIdentity';
 import { MIN_SECONDARY_WORDS_FOR_WARP_GATE } from './warpGateRules';
 
 /** ワープ経路が繋がっていないときの距離 */
@@ -13,12 +14,12 @@ export function pickSearchGameTargetId(
   plots: readonly UserPlotRow[],
   excludeId?: string | null,
 ): string | null {
-  const candidates = plots.filter((plot) => plot.word_id !== excludeId);
+  const candidates = plots.filter((plot) => getPlotKey(plot) !== excludeId && plot.word_id !== excludeId);
   if (candidates.length === 0) {
-    return plots[0]?.word_id ?? null;
+    return plots[0] ? getPlotKey(plots[0]) : null;
   }
   const index = Math.floor(Math.random() * candidates.length);
-  return candidates[index]?.word_id ?? null;
+  return candidates[index] ? getPlotKey(candidates[index]) : null;
 }
 
 /** 副感情方向に十分な語があるワープゲートだけで星系グラフを構築 */

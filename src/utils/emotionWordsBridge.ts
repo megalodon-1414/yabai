@@ -2,7 +2,6 @@ import type { BasicEmotionId, EmotionId } from '../data/emotions';
 import {
   BASIC_EMOTIONS,
   DYAD_EMOTIONS,
-  isBasicEmotionId,
 } from '../data/emotions';
 
 export type EmotionWordTypeId = 'adjective' | 'idiom';
@@ -161,10 +160,6 @@ export function resolveSecondaryEmotionId(
     }
   }
 
-  if (isBasicEmotionId(primaryId)) {
-    return primaryId;
-  }
-
-  const dyad = DYAD_EMOTIONS.find((item) => item.id === primaryId);
-  return dyad?.components[0] ?? 'joy';
+  // secondary 未設定は純感情（主=副）
+  return primaryId;
 }

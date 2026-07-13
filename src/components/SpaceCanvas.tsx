@@ -30,6 +30,7 @@ import {
   WARP_GATE_ANCHOR_INTENSITY,
   canEnterWarpGate,
 } from '../utils/warpGateRules';
+import { findPlotByKey, getPlotKey } from '../utils/plotIdentity';
 import type { MinimapSyncState } from '../utils/emotionMinimapLayout';
 import { EmotionDirectionArrows } from './EmotionDirectionArrows';
 import { EmotionSpaceAreas } from './EmotionSpaceAreas';
@@ -609,7 +610,7 @@ export function SpaceCanvas({
   const [viewAlignRequest, setViewAlignRequest] = useState<CameraViewAlignRequest | null>(null);
   const cameraInteractionLockRef = useRef(false);
   const selectedPlot = useMemo(
-    () => plots.find((plot) => plot.word_id === selectedId) ?? null,
+    () => findPlotByKey(plots, selectedId),
     [plots, selectedId],
   );
   const hoveredPlot = useMemo(
@@ -676,7 +677,7 @@ export function SpaceCanvas({
       return plots;
     }
 
-    return plots.filter((plot) => plot.word_id === selectedId || nearbyPlotIds.has(plot.word_id));
+    return plots.filter((plot) => getPlotKey(plot) === selectedId || nearbyPlotIds.has(getPlotKey(plot)));
   }, [explorationMode, nearbyPlotIds, plots, selectedId]);
 
   const distantSameSystemPlots = useMemo(() => {
@@ -686,9 +687,9 @@ export function SpaceCanvas({
 
     return plots.filter(
       (plot) =>
-        plot.word_id !== selectedId
+        getPlotKey(plot) !== selectedId
         && plot.primaryId === selectedPlot.primaryId
-        && !nearbyPlotIds.has(plot.word_id),
+        && !nearbyPlotIds.has(getPlotKey(plot)),
     );
   }, [explorationMode, nearbyPlotIds, plots, selectedId, selectedPlot]);
 
@@ -699,9 +700,9 @@ export function SpaceCanvas({
 
     return plots.filter(
       (plot) =>
-        plot.word_id !== selectedId
+        getPlotKey(plot) !== selectedId
         && plot.primaryId !== selectedPlot.primaryId
-        && !nearbyPlotIds.has(plot.word_id),
+        && !nearbyPlotIds.has(getPlotKey(plot)),
     );
   }, [explorationMode, nearbyPlotIds, plots, selectedId, selectedPlot]);
 
@@ -795,7 +796,7 @@ export function SpaceCanvas({
     }
 
     setIsDefaultView(false);
-    onWordSelect(target.word_id, { viaWarp: true });
+    onWordSelect(getPlotKey(target), { viaWarp: true });
   }, [onWordSelect, warpGateTargets]);
 
   const getOrbitTimeScale = useCallback((plot: UserPlotRow | null | undefined): number => (
@@ -986,10 +987,10 @@ export function SpaceCanvas({
           />
           {interactivePlots.map((plot) => (
             <WordPlot
-              key={plot.word_id}
+              key={getPlotKey(plot)}
               plot={plot}
-              isSelected={plot.word_id === selectedId}
-              isNearbyVisible={!nearbyPlotIds || nearbyPlotIds.has(plot.word_id)}
+              isSelected={getPlotKey(plot) === selectedId}
+              isNearbyVisible={!nearbyPlotIds || nearbyPlotIds.has(getPlotKey(plot))}
               explorationMode={explorationMode}
               flowLabelExpiresAt={flowLabelExpiresAt}
               flowLabelNow={flowLabelNow}

@@ -183,7 +183,7 @@ export function WarpGate({
         />
       </lineSegments>
       <mesh
-        position={[0, 0, length]}
+        position={[0, 0, length * 0.45]}
         onClick={(event) => {
           if (!active) {
             return;
@@ -208,6 +208,18 @@ export function WarpGate({
           onHoverScreenPosition?.(null);
         }}
       >
+        {/* 見た目より大きい当たり判定（手前の星に遮られにくい） */}
+        <sphereGeometry args={[Math.max(radius * 2.4, 0.16), 16, 16]} />
+        <meshBasicMaterial
+          color={lineColor}
+          transparent
+          opacity={0}
+          depthWrite={false}
+          depthTest={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh position={[0, 0, length]}>
         <circleGeometry args={[radius * (active ? 0.42 : 0.32), active ? 24 : 10]} />
         <meshBasicMaterial
           color={lineColor}
