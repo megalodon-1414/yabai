@@ -102,6 +102,20 @@ export function buildEmotionIdBySupabaseId(
   return map;
 }
 
+/** アプリ内 EmotionId → Supabase emotions.id */
+export function buildSupabaseIdByEmotionId(
+  emotions: readonly SupabaseEmotionRow[],
+): Map<EmotionId, number> {
+  const map = new Map<EmotionId, number>();
+  for (const emotion of emotions) {
+    const appId = mapSupabaseEmotionToAppId(emotion);
+    if (appId && !map.has(appId)) {
+      map.set(appId, emotion.id);
+    }
+  }
+  return map;
+}
+
 /** EmotionId → Supabase emotions.name（32感情表記） */
 const supabaseEmotionLabelByAppId = new Map<EmotionId, string>();
 

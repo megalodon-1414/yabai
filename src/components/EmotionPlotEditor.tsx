@@ -3,6 +3,7 @@ import type { EmotionId } from '../data/emotions';
 import { BASIC_EMOTIONS, DYAD_EMOTIONS, getEmotionById, isBasicEmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import { EMOTION_INTENSITY_MAX, clampIntensity, isPurePlot, normalizeUserPlotRow } from '../utils/emotionPlotBridge';
+import { resolvePrimaryEmotionLabel } from '../utils/emotionCoordinates';
 
 interface EmotionPlotEditorProps {
   plot: UserPlotRow;
@@ -51,14 +52,14 @@ export function EmotionPlotEditor({ plot, onChange }: EmotionPlotEditorProps) {
           <optgroup label="基本8感情">
             {BASIC_EMOTIONS.map((emotion) => (
               <option key={emotion.id} value={emotion.id}>
-                {emotion.label}
+                {resolvePrimaryEmotionLabel(emotion.id)}
               </option>
             ))}
           </optgroup>
           <optgroup label="中間24感情">
             {DYAD_EMOTIONS.map((dyad) => (
               <option key={dyad.id} value={dyad.id}>
-                {dyad.label}
+                {resolvePrimaryEmotionLabel(dyad.id)}
               </option>
             ))}
           </optgroup>
@@ -79,14 +80,14 @@ export function EmotionPlotEditor({ plot, onChange }: EmotionPlotEditorProps) {
           <optgroup label="基本8感情">
             {BASIC_EMOTIONS.map((emotion) => (
               <option key={emotion.id} value={emotion.id}>
-                {emotion.label}
+                {resolvePrimaryEmotionLabel(emotion.id)}
               </option>
             ))}
           </optgroup>
           <optgroup label="中間24感情">
             {DYAD_EMOTIONS.map((dyad) => (
               <option key={dyad.id} value={dyad.id}>
-                {dyad.label}
+                {resolvePrimaryEmotionLabel(dyad.id)}
               </option>
             ))}
           </optgroup>
