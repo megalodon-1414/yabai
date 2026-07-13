@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { getEmotionById, type EmotionId } from '../data/emotions';
+import { getEmotionById } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import {
   createMixedPlotOrbitOverrides,
