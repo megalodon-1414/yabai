@@ -20,6 +20,17 @@ const VISIBILITY_LERP_SPEED = 6;
 const VISIBILITY_INTERACTION_THRESHOLD = 0.08;
 const EXPLORATION_DISTANT_VISIBILITY = 0.38;
 const EXPLORATION_DISTANT_SCALE = 0.42;
+const PLOT_CORE_RADIUS = 0.032;
+/** 見た目の球より少しだけ大きいクリック判定 */
+const PLOT_HIT_RADIUS = 0.042;
+/** 波動は球の中心付近から発生して外へ広がる（細い二重線） */
+const SELECTED_WAVE_START_RADIUS = PLOT_CORE_RADIUS * 0.12;
+const SELECTED_WAVE_END_RADIUS = PLOT_CORE_RADIUS * 1.55;
+const SELECTED_WAVE_TUBE = PLOT_CORE_RADIUS * 0.0055;
+/** 二重線の内側と外側の半径差 */
+const SELECTED_WAVE_DOUBLE_GAP = PLOT_CORE_RADIUS * 0.04;
+const SELECTED_WAVE_COUNT = 2;
+const SELECTED_WAVE_DURATION = 4.6;
 
 interface WordPlotProps {
   plot: UserPlotRow;
@@ -51,6 +62,8 @@ export function WordPlot({
   const { size, camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Mesh>(null);
+  const hitMeshRef = useRef<THREE.Mesh>(null);
+  const selectedWavesRef = useRef<THREE.Group>(null);
   const primaryLightRef = useRef<THREE.PointLight>(null);
   const secondaryLightRef = useRef<THREE.PointLight>(null);
   const labelRef = useRef<HTMLDivElement>(null);
@@ -70,10 +83,11 @@ export function WordPlot({
   const flowExpiresAt = flowLabelExpiresAt?.[plot.word_id];
   const isFlowLabelActive = flowExpiresAt !== undefined && flowExpiresAt > flowLabelNow;
   const showLabel = !explorationMode
-    || (plotLabelDisplayMode === 'nearby' && isNearbyVisible)
-    || (plotLabelDisplayMode === 'flow' && (isSelected || isFlowLabelActive));
+    || (plotLabelDisplayMode === 'nearby' && isNearbyVisible && !isSelected)
+    || (plotLabelDisplayMode === 'flow' && !isSelected && isFlowLabelActive);
   const isDistantExplorationPlot = explorationMode && !isNearbyVisible && !isSelected;
   const isSelectable = !explorationMode || isNearbyVisible || isSelected;
+  const showSelectedRing = explorationMode && isSelected;
 
   const labelStyle = useMemo(
     () => getPlotLabelStyle(size.width, size.height, isSelected, selectedScale),
@@ -126,10 +140,16 @@ export function WordPlot({
     const visibilityFactor = visibility.current;
     const isRendered = visibilityFactor > 0.01;
     mesh.visible = isRendered;
+    if (hitMeshRef.current) {
+      hitMeshRef.current.visible = isRendered && isSelectable;
+    }
 
     if (!isRendered) {
       if (labelRef.current) {
         labelRef.current.style.opacity = '0';
+      }
+      if (selectedWavesRef.current) {
+        selectedWavesRef.current.visible = false;
       }
       return;
     }
@@ -179,6 +199,29 @@ export function WordPlot({
       }
     }
     mesh.scale.setScalar(plotScale);
+    if (hitMeshRef.current) {
+      hitMeshRef.current.scale.setScalar(plotScale);
+    }
+
+    const waves = selectedWavesRef.current;
+    if (waves) {
+      waves.visible = showSelectedRing && isRendered;
+      waves.quaternion.copy(camera.quaternion);
+      const expandRatio = SELECTED_WAVE_END_RADIUS / SELECTED_WAVE_START_RADIUS;
+      for (let i = 0; i < waves.children.length; i += 1) {
+        const wavePair = waves.children[i] as THREE.Group;
+        const phase = (state.clock.elapsedTime / SELECTED_WAVE_DURATION + i / SELECTED_WAVE_COUNT) % 1;
+        const radiusScale = plotScale * (1 + phase * (expandRatio - 1));
+        wavePair.scale.setScalar(radiusScale);
+        const opacity = (1 - phase) * (1 - phase) * visibilityFactor;
+        wavePair.visible = showSelectedRing && isRendered;
+        for (const child of wavePair.children) {
+          const line = child as THREE.Mesh;
+          const material = line.material as THREE.MeshBasicMaterial;
+          material.opacity = opacity;
+        }
+      }
+    }
 
     if (labelRef.current) {
       if (!showLabel) {
@@ -228,8 +271,22 @@ export function WordPlot({
             {!emotionParams.isPure && <pointLight ref={secondaryLightRef} distance={1.1} decay={2} />}
           </>
         )}
+        <mesh ref={meshRef}>
+          <sphereGeometry args={[PLOT_CORE_RADIUS, 12, 12]} />
+          <meshStandardMaterial
+            color={color}
+            emissive={color}
+            emissiveIntensity={1.05}
+            transparent
+            opacity={1}
+            roughness={0.2}
+            metalness={0}
+            toneMapped={false}
+          />
+        </mesh>
         <mesh
-          ref={meshRef}
+          ref={hitMeshRef}
+          visible={isSelectable}
           onClick={handleClick}
           onPointerOver={(event) => {
             if (!isSelectable || visibility.current < VISIBILITY_INTERACTION_THRESHOLD) {
@@ -245,18 +302,39 @@ export function WordPlot({
             onHoverChange?.(null);
           }}
         >
-          <sphereGeometry args={[0.032, 12, 12]} />
-          <meshStandardMaterial
-            color={color}
-            emissive={color}
-            emissiveIntensity={1.05}
-            transparent
-            opacity={1}
-            roughness={0.2}
-            metalness={0}
-            toneMapped={false}
-          />
+          <sphereGeometry args={[PLOT_HIT_RADIUS, 8, 8]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
         </mesh>
+        {showSelectedRing && (
+          <group ref={selectedWavesRef} renderOrder={2}>
+            {Array.from({ length: SELECTED_WAVE_COUNT }, (_, index) => (
+              <group key={`selected-wave-${index}`}>
+                <mesh>
+                  <torusGeometry args={[SELECTED_WAVE_START_RADIUS, SELECTED_WAVE_TUBE, 5, 64]} />
+                  <meshBasicMaterial
+                    color={color}
+                    transparent
+                    opacity={0}
+                    depthWrite={false}
+                    toneMapped={false}
+                  />
+                </mesh>
+                <mesh>
+                  <torusGeometry
+                    args={[SELECTED_WAVE_START_RADIUS + SELECTED_WAVE_DOUBLE_GAP, SELECTED_WAVE_TUBE, 5, 64]}
+                  />
+                  <meshBasicMaterial
+                    color={color}
+                    transparent
+                    opacity={0}
+                    depthWrite={false}
+                    toneMapped={false}
+                  />
+                </mesh>
+              </group>
+            ))}
+          </group>
+        )}
 
         {showLabel && (
           <Html center distanceFactor={labelStyle.distanceFactor} style={{ pointerEvents: 'none', userSelect: 'none' }}>

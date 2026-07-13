@@ -5,8 +5,9 @@ import { BASIC_EMOTIONS, DYAD_EMOTIONS, getBasicEmotion, isBasicEmotionId } from
 export const RING_RADIUS = 7.5;
 /** 上段4感情（喜・恐・悲・怒）の Y、下段4感情（信・驚・嫌・期）の Y */
 export const Y_LAYER_OFFSET = 5.6;
-export const EMOTION_SPHERE_RADIUS = 1.45;
-export const DYAD_SPHERE_RADIUS = 0.9;
+/** 強度に応じた星系内距離の基準半径（大きいほど強度1あたりの距離が広がる） */
+export const EMOTION_SPHERE_RADIUS = 1.45 * 1.5;
+export const DYAD_SPHERE_RADIUS = 0.9 * 1.5;
 export const PURE_AREA_RATIO = 0.5;
 
 export function getEmotionSphereRadius(id: EmotionId): number {

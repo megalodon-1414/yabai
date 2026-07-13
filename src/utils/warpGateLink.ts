@@ -5,10 +5,7 @@ import {
   getEmotionCenter,
   getEmotionSphereRadius,
 } from './emotionSpaceLayout';
-import {
-  plotPositionFromRow,
-  type PlotOrbitOverrideMap,
-} from './plotFromUserPlot';
+import { isPureEmotionPlot } from './plotFromUserPlot';
 
 /** 星系 `systemId` の球面上で、`towardId` 星系を向いた端の位置 */
 export function getFacingEdgePosition(
@@ -30,10 +27,19 @@ export function getFacingEdgePosition(
   ];
 }
 
+function sortByIntensityDesc(a: UserPlotRow, b: UserPlotRow): number {
+  const intensityDiff =
+    rowToEmotionParams(b).intensity - rowToEmotionParams(a).intensity;
+  if (intensityDiff !== 0) {
+    return intensityDiff;
+  }
+  return a.word_id.localeCompare(b.word_id);
+}
+
 /**
  * from → to のワープ着地先。
- * 優先: to 星系内の「from への戻りゲート」語（主=to・副=from）
- * 次点: to 星系内で from 向きの端に最も近い語
+ * 1. 行き先星系内で「元の主感情」方向（主=to・副=from）の強度最大語（極限）
+ * 2. なければ行き先星系の純感情（循環上）の強度最大語
  */
 export function findLinkedWarpDestination(
   plots: readonly UserPlotRow[],
@@ -41,52 +47,28 @@ export function findLinkedWarpDestination(
   toEmotionId: EmotionId,
   options?: {
     excludeWordId?: string | null;
-    orbitOverrides?: PlotOrbitOverrideMap;
   },
 ): UserPlotRow | null {
   const excludeWordId = options?.excludeWordId ?? null;
-  const orbitOverrides = options?.orbitOverrides;
+  const inDestination = plots.filter(
+    (plot) => plot.primaryId === toEmotionId && plot.word_id !== excludeWordId,
+  );
 
-  const reciprocal = plots
+  const reciprocal = inDestination
     .filter((plot) => {
-      if (excludeWordId && plot.word_id === excludeWordId) {
-        return false;
-      }
       const params = rowToEmotionParams(plot);
-      return (
-        !params.isPure
-        && params.primaryId === toEmotionId
-        && params.secondaryId === fromEmotionId
-      );
+      return !params.isPure && params.secondaryId === fromEmotionId;
     })
-    .sort((a, b) => b.intensity - a.intensity || a.word_id.localeCompare(b.word_id));
+    .sort(sortByIntensityDesc);
 
   if (reciprocal[0]) {
     return reciprocal[0];
   }
 
-  const landing = getFacingEdgePosition(toEmotionId, fromEmotionId);
-  const candidates = plots.filter(
-    (plot) => plot.primaryId === toEmotionId && plot.word_id !== excludeWordId,
-  );
-  if (candidates.length === 0) {
-    return null;
-  }
+  // その方向の語が無い → 行き先空間の純感情循環上へ
+  const pureOrbit = inDestination
+    .filter((plot) => isPureEmotionPlot(plot))
+    .sort(sortByIntensityDesc);
 
-  let best = candidates[0];
-  let bestDistance = Infinity;
-  for (const plot of candidates) {
-    const position = plotPositionFromRow(plot, 0, orbitOverrides?.get(plot.word_id));
-    const distance = Math.hypot(
-      position[0] - landing[0],
-      position[1] - landing[1],
-      position[2] - landing[2],
-    );
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = plot;
-    }
-  }
-
-  return best;
+  return pureOrbit[0] ?? null;
 }

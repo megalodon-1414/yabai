@@ -6,12 +6,12 @@ import type { UserPlotRow } from '../types/userPlot';
 import { getEmotionCenter } from '../utils/emotionSpaceLayout';
 import { plotPositionFromRow, type PlotOrbitOverride } from '../utils/plotFromUserPlot';
 
-const ACTIVE_GATE_DISTANCE_FROM_SOURCE = 0.72;
-const PASSIVE_GATE_DISTANCE_FROM_SOURCE = 0.38;
-const ACTIVE_GATE_LENGTH = 0.6;
-const PASSIVE_GATE_LENGTH = 0.28;
-const ACTIVE_GATE_RADIUS = 0.26;
-const PASSIVE_GATE_RADIUS = 0.09;
+const ACTIVE_GATE_DISTANCE_FROM_SOURCE = 0.12;
+const PASSIVE_GATE_DISTANCE_FROM_SOURCE = 0.08;
+const ACTIVE_GATE_LENGTH = 0.14;
+const PASSIVE_GATE_LENGTH = 0.08;
+const ACTIVE_GATE_RADIUS = 0.22;
+const PASSIVE_GATE_RADIUS = 0.112;
 const ACTIVE_GATE_RING_COUNT = 8;
 const PASSIVE_GATE_RING_COUNT = 4;
 const ACTIVE_GATE_RADIAL_COUNT = 18;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SpaceCanvas } from './components/SpaceCanvas';
 import { EmotionMinimap, MAP_WIDTH } from './components/EmotionMinimap';
 import { ExplorationToolsPanel } from './components/ExplorationToolsPanel';
+import { SearchGameHud } from './components/SearchGameHud';
 import { WordEditor } from './components/WordEditor';
 import { usePlotSubmit } from './hooks/usePlotSubmit';
 import { fetchEmotionWordsAsPlots } from './services/emotionWords';
@@ -12,6 +13,7 @@ import {
   updatePlot,
 } from './utils/plotHelpers';
 import { isExplorationDummyPlot, mergeExplorationDummyPlots } from './utils/explorationDummyPlots';
+import { canMoveWithinEmotionSystem } from './utils/plotFromUserPlot';
 import { EMOTION_INTENSITY_MAX } from './utils/emotionPlotBridge';
 import { pickRandomPlotId } from './utils/explorationMode';
 import { type AppBackgroundTheme } from './utils/appBackgroundTheme';
@@ -23,6 +25,15 @@ import { DEFAULT_EMOTION_UI_ACCENT, getEmotionUiTheme } from './utils/emotionUiT
 import { resolvePrimaryEmotionLabel } from './utils/emotionCoordinates';
 import { filterPlotsByTags, getPlotKindLabel, type PlotTagId } from './utils/plotTags';
 import { mergeWithSeedPlots } from './utils/seedPlots';
+import {
+  SEARCH_GAME_MIN_REFERENCE_HOPS,
+  SEARCH_GAME_UNREACHABLE_DISTANCE,
+  buildWarpGateAdjacency,
+  pickSearchGameTargetId,
+  proximityRatio,
+  proximityTrend,
+  warpJourneyDistance,
+} from './utils/searchGame';
 
 const UI_COLOR_TRANSITION =
   'border-color 320ms ease, background-color 320ms ease, color 320ms ease, box-shadow 320ms ease';
@@ -53,6 +64,13 @@ function App() {
   const [isExplorationMode] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [searchGameTargetId, setSearchGameTargetId] = useState<string | null>(null);
+  const [searchGamePreviousDistance, setSearchGamePreviousDistance] = useState<number | null>(null);
+  const [searchGameReferenceDistance, setSearchGameReferenceDistance] = useState(SEARCH_GAME_MIN_REFERENCE_HOPS);
+  const searchGameLastMeasureRef = useRef<{ wordId: string | null; distance: number | null }>({
+    wordId: null,
+    distance: null,
+  });
   const { plotStatus } = usePlotSubmit();
 
   const togglePlotLabelDisplayMode = useCallback(() => {
@@ -239,7 +257,22 @@ function App() {
     setPlots((prev) => [...prev, plot]);
   };
 
-  const handleWordSelect = (id: string) => {
+  const handleWordSelect = (id: string, options?: { viaWarp?: boolean }) => {
+    if (isExplorationMode && !options?.viaWarp && selectedId) {
+      const current = displayPlots.find((plot) => plot.word_id === selectedId);
+      const next = displayPlots.find((plot) => plot.word_id === id);
+      if (current && next) {
+        // 星系間の移動はワープゲート経由のみ
+        if (current.primaryId !== next.primaryId) {
+          return;
+        }
+        // 混合感情からは純感情か同じ副感情へしか歩けない
+        if (!canMoveWithinEmotionSystem(current, next)) {
+          return;
+        }
+      }
+    }
+
     setSelectedId(id);
     if (!isExplorationMode && !isExplorationDummyPlot(id)) {
       setIsEditorOpen(true);
@@ -258,9 +291,98 @@ function App() {
     });
   }, []);
 
-  const handleStartSearchGame = useCallback(() => {
-    // サーチゲーム本体は今後実装。UIのスタート導線のみ用意する。
+  const beginSearchGameRound = useCallback((plotsForGame: UserPlotRow[], excludeId?: string | null) => {
+    const targetId = pickSearchGameTargetId(plotsForGame, excludeId);
+    if (!targetId) {
+      return;
+    }
+
+    const current = excludeId
+      ? plotsForGame.find((plot) => plot.word_id === excludeId)
+      : null;
+    const target = plotsForGame.find((plot) => plot.word_id === targetId);
+    const adjacency = buildWarpGateAdjacency(plotsForGame);
+    const initialDistance = current && target
+      ? warpJourneyDistance(plotsForGame, current, target, adjacency)
+      : SEARCH_GAME_MIN_REFERENCE_HOPS;
+
+    setSearchGameTargetId(targetId);
+    setSearchGamePreviousDistance(null);
+    setSearchGameReferenceDistance(
+      Math.max(
+        SEARCH_GAME_MIN_REFERENCE_HOPS,
+        initialDistance >= SEARCH_GAME_UNREACHABLE_DISTANCE ? SEARCH_GAME_MIN_REFERENCE_HOPS : initialDistance,
+      ),
+    );
+    searchGameLastMeasureRef.current = { wordId: null, distance: null };
   }, []);
+
+  const handleStartSearchGame = useCallback(() => {
+    beginSearchGameRound(visiblePlots, selectedId);
+  }, [beginSearchGameRound, selectedId, visiblePlots]);
+
+  const handleQuitSearchGame = useCallback(() => {
+    setSearchGameTargetId(null);
+    setSearchGamePreviousDistance(null);
+    setSearchGameReferenceDistance(SEARCH_GAME_MIN_REFERENCE_HOPS);
+    searchGameLastMeasureRef.current = { wordId: null, distance: null };
+  }, []);
+
+  const handleNextSearchGameRound = useCallback(() => {
+    beginSearchGameRound(visiblePlots, selectedId);
+  }, [beginSearchGameRound, selectedId, visiblePlots]);
+
+  const searchGameTargetPlot = useMemo(
+    () => (searchGameTargetId
+      ? visiblePlots.find((plot) => plot.word_id === searchGameTargetId) ?? null
+      : null),
+    [searchGameTargetId, visiblePlots],
+  );
+
+  const searchGameWarpAdjacency = useMemo(
+    () => buildWarpGateAdjacency(visiblePlots),
+    [visiblePlots],
+  );
+
+  const searchGameDistance = useMemo(() => {
+    if (!selectedPlot || !searchGameTargetPlot) {
+      return null;
+    }
+    return warpJourneyDistance(
+      visiblePlots,
+      selectedPlot,
+      searchGameTargetPlot,
+      searchGameWarpAdjacency,
+    );
+  }, [searchGameTargetPlot, searchGameWarpAdjacency, selectedPlot, visiblePlots]);
+
+  const searchGameFound = Boolean(
+    searchGameTargetId && selectedId && searchGameTargetId === selectedId,
+  );
+
+  useEffect(() => {
+    if (searchGameDistance == null || !selectedId || searchGameFound) {
+      return;
+    }
+
+    if (searchGameLastMeasureRef.current.wordId !== selectedId) {
+      setSearchGamePreviousDistance(searchGameLastMeasureRef.current.distance);
+      searchGameLastMeasureRef.current = {
+        wordId: selectedId,
+        distance: searchGameDistance,
+      };
+    }
+  }, [searchGameDistance, searchGameFound, selectedId]);
+
+  // お題がフィルタ等で消えたらゲーム終了
+  useEffect(() => {
+    if (!searchGameTargetId) {
+      return;
+    }
+    if (!visiblePlots.some((plot) => plot.word_id === searchGameTargetId)) {
+      handleQuitSearchGame();
+    }
+  }, [handleQuitSearchGame, searchGameTargetId, visiblePlots]);
 
   const handlePlotDelete = (id: string) => {
     if (isExplorationDummyPlot(id)) {
@@ -378,6 +500,23 @@ function App() {
           onWordSelect={handleWordSelect}
         />
 
+        {isExplorationMode && searchGameTargetPlot && searchGameDistance != null && (
+          <SearchGameHud
+            targetWord={searchGameTargetPlot.word_id}
+            distance={searchGameFound ? 0 : searchGameDistance}
+            proximity={searchGameFound
+              ? 1
+              : proximityRatio(searchGameDistance, searchGameReferenceDistance)}
+            trend={searchGameFound
+              ? 'closer'
+              : proximityTrend(searchGamePreviousDistance, searchGameDistance)}
+            found={searchGameFound}
+            uiTheme={emotionUiTheme}
+            onQuit={handleQuitSearchGame}
+            onNextRound={handleNextSearchGameRound}
+          />
+        )}
+
         {isExplorationMode && (
           <div
             style={{
@@ -397,9 +536,13 @@ function App() {
               uiTheme={emotionUiTheme}
               plots={visiblePlots}
               selectedTagIds={selectedTagIds}
+              currentSystemId={selectedPlot?.primaryId ?? null}
+              currentPlot={selectedPlot}
               onToggleTag={handleToggleTag}
               onSelectWord={handleWordSelect}
+              searchGameActive={Boolean(searchGameTargetId)}
               onStartSearchGame={handleStartSearchGame}
+              onQuitSearchGame={handleQuitSearchGame}
             />
           </div>
         )}

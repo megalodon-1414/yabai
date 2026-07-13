@@ -1,7 +1,7 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { ALL_EMOTIONS, getEmotionById, type EmotionId } from '../data/emotions';
+import { getEmotionById, type EmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import {
   createMixedPlotOrbitOverrides,
@@ -11,6 +11,7 @@ import {
   plotPositionFromRow,
   type PlotOrbitOverride,
 } from '../utils/plotFromUserPlot';
+import { getMixedDirectionPositionAtIntensity } from '../utils/emotionPlotPosition';
 import type { EmotionUiTheme } from '../utils/emotionUiTheme';
 import { getBackgroundThemeColors, type AppBackgroundTheme } from '../utils/appBackgroundTheme';
 import type { PlotLabelDisplayMode } from '../utils/plotLabelStyle';
@@ -22,10 +23,15 @@ import {
   EXPLORATION_NEARBY_RADIUS,
   EXPLORATION_SCREEN_ANCHOR,
 } from '../utils/explorationMode';
-import { getEmotionCenter, getEmotionSystemEdgePosition } from '../utils/emotionSpaceLayout';
-import { resolvePrimaryEmotionLabel } from '../utils/emotionCoordinates';
-import { findLinkedWarpDestination, getFacingEdgePosition } from '../utils/warpGateLink';
+import { getEmotionCenter } from '../utils/emotionSpaceLayout';
+import { findLinkedWarpDestination } from '../utils/warpGateLink';
+import {
+  MAX_MOVABLE_NEARBY_STARS,
+  WARP_GATE_ANCHOR_INTENSITY,
+  canEnterWarpGate,
+} from '../utils/warpGateRules';
 import type { MinimapSyncState } from '../utils/emotionMinimapLayout';
+import { EmotionDirectionArrows } from './EmotionDirectionArrows';
 import { EmotionSpaceAreas } from './EmotionSpaceAreas';
 import { ExplorationDistantPlotCloud } from './ExplorationDistantPlotCloud';
 import { GravityAttractionParticles } from './GravityAttractionParticles';
@@ -35,7 +41,7 @@ import { WordPlot } from './WordPlot';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 3, 18];
 const DEFAULT_CAMERA_TARGET: [number, number, number] = [0, 0, 0];
-const DEFAULT_CAMERA_FOV = 55;
+const DEFAULT_CAMERA_FOV = 78;
 const SELECTION_CAMERA_DISTANCE = 5;
 const DEFAULT_CAMERA_DISTANCE = new THREE.Vector3(...DEFAULT_CAMERA_POSITION).distanceTo(
   new THREE.Vector3(...DEFAULT_CAMERA_TARGET),
@@ -44,10 +50,7 @@ const TARGET_LERP_SPEED = 6;
 const TARGET_ARRIVAL_THRESHOLD = 0.2;
 const ROTATION_SPEED = 0.006;
 const WHEEL_ZOOM_SPEED = 0.0015;
-const EXPLORATION_ORBIT_CAMERA_DISTANCE = 1.3;
-const EXPLORATION_MIXED_ORBIT_CAMERA_DISTANCE = 0.68;
 const SELECTED_ORBIT_TIME_SCALE = 0.18;
-const EMOTION_SYSTEM_GATE_NEARBY_RADIUS = 2.4;
 
 type FocusPhase = 'idle' | 'movingTarget' | 'movingView' | 'adjustingZoom' | 'focused';
 
@@ -56,19 +59,8 @@ interface WarpGateEntry {
   plot: UserPlotRow;
   orbitOverride?: PlotOrbitOverride;
   sourceOverride?: [number, number, number];
+  anchorAtSource?: boolean;
   active: boolean;
-}
-
-interface EmotionSystemWarpGateEntry {
-  key: string;
-  emotionId: EmotionId;
-  /** ゲートが属する星系（戻り側のホスト） */
-  hostSystemId: EmotionId;
-  edgePosition: [number, number, number];
-  color: string;
-  hoverLabel: string;
-  active: boolean;
-  hasTargets: boolean;
 }
 
 interface SpaceCanvasProps {
@@ -85,7 +77,12 @@ interface SpaceCanvasProps {
   onHoveredWarpGateChange?: (label: string | null) => void;
   onHoveredScreenPosition?: (point: { x: number; y: number; visible: boolean } | null) => void;
   onMinimapSync?: (state: MinimapSyncState | null) => void;
-  onWordSelect: (id: string) => void;
+  onWordSelect: (id: string, options?: { viaWarp?: boolean }) => void;
+}
+
+interface CameraViewAlignRequest {
+  direction: [number, number, number];
+  nonce: number;
 }
 
 interface CameraControlsProps {
@@ -95,8 +92,23 @@ interface CameraControlsProps {
   explorationFocus?: boolean;
   explorationAnchor?: { x: number; y: number };
   explorationDistance?: number;
+  /** 指定時は毎フレームこのプロット位置を注視点にする（公転する純感情用） */
+  followPlot?: UserPlotRow | null;
+  followOrbitOverride?: PlotOrbitOverride;
+  followOrbitTimeScale?: number;
+  /** 感情方向クリック時、カメラをその向きへ回す */
+  viewAlignRequest?: CameraViewAlignRequest | null;
+  interactionLockRef?: MutableRefObject<boolean>;
   onCameraStateChange?: (state: Pick<MinimapSyncState, 'cameraPosition' | 'cameraTarget' | 'cameraUp'>) => void;
 }
+
+const VIEW_ALIGN_SPEED = 4.2;
+/** 正面揃えだと単語が重なるので、少し上からのアングルにする */
+const VIEW_ALIGN_ELEVATION = 0.3;
+/** 矢印方向が画面左上に見えるよう、カメラを右下寄りにずらす */
+const VIEW_ALIGN_LATERAL = 0.6;
+/** 大きいほど感情方向の奥を向く */
+const VIEW_ALIGN_BACK = 0.7;
 
 function CameraControls({
   resetCount,
@@ -105,6 +117,11 @@ function CameraControls({
   explorationFocus = false,
   explorationAnchor = EXPLORATION_SCREEN_ANCHOR,
   explorationDistance = EXPLORATION_CAMERA_DISTANCE,
+  followPlot = null,
+  followOrbitOverride,
+  followOrbitTimeScale = 1,
+  viewAlignRequest = null,
+  interactionLockRef,
   onCameraStateChange,
 }: CameraControlsProps) {
   const { camera, gl, size } = useThree();
@@ -123,6 +140,15 @@ function CameraControls({
   const prevFocusOnSelection = useRef(focusOnSelection);
   const frameCounter = useRef(0);
   const lastCameraState = useRef<Pick<MinimapSyncState, 'cameraPosition' | 'cameraTarget' | 'cameraUp'> | null>(null);
+  const alignFrom = useRef(new THREE.Vector3());
+  const alignTo = useRef(new THREE.Vector3());
+  const alignDir = useRef(new THREE.Vector3());
+  const alignProgress = useRef(1);
+  const lastAlignNonce = useRef<number | null>(null);
+  const worldUp = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+  const alignLateral = useRef(new THREE.Vector3());
+  const alignScreen = useRef(new THREE.Vector3());
+  const alignViewForward = useRef(new THREE.Vector3());
 
   const focusDistance = explorationFocus ? explorationDistance : SELECTION_CAMERA_DISTANCE;
   const screenAnchor = explorationFocus ? explorationAnchor : undefined;
@@ -132,6 +158,39 @@ function CameraControls({
   const setFocusPhase = (phase: FocusPhase) => {
     focusPhase.current = phase;
   };
+
+  useEffect(() => {
+    if (!viewAlignRequest || viewAlignRequest.nonce === lastAlignNonce.current) {
+      return;
+    }
+    lastAlignNonce.current = viewAlignRequest.nonce;
+    alignFrom.current.copy(camera.position).sub(smoothTarget.current);
+    if (alignFrom.current.lengthSq() < 0.0001) {
+      alignFrom.current.set(...DEFAULT_CAMERA_POSITION).sub(smoothTarget.current);
+    }
+    alignFrom.current.normalize();
+
+    alignDir.current
+      .set(viewAlignRequest.direction[0], viewAlignRequest.direction[1], viewAlignRequest.direction[2])
+      .normalize();
+    // 感情方向が画面左上に見えるよう、カメラを右下＋やや上に置く
+    alignLateral.current.crossVectors(worldUp, alignDir.current);
+    if (alignLateral.current.lengthSq() < 1e-8) {
+      alignLateral.current.set(1, 0, 0);
+    } else {
+      alignLateral.current.normalize();
+    }
+    alignTo.current
+      .copy(alignDir.current)
+      .multiplyScalar(-VIEW_ALIGN_BACK)
+      .addScaledVector(worldUp, VIEW_ALIGN_ELEVATION)
+      .addScaledVector(alignLateral.current, VIEW_ALIGN_LATERAL);
+    if (alignTo.current.lengthSq() < 0.0001) {
+      return;
+    }
+    alignTo.current.normalize();
+    alignProgress.current = 0;
+  }, [camera, viewAlignRequest, worldUp]);
 
   useEffect(() => {
     baseTarget.current.set(...cameraTarget);
@@ -144,10 +203,19 @@ function CameraControls({
       if (camera instanceof THREE.PerspectiveCamera) {
         clearSelectionViewOffset(camera);
       }
-    } else if (focusPhase.current === 'focused' && prevFocusOnSelection.current) {
-      // 選択中の別単語切替: 注視点のみ更新
-    } else if (focusPhase.current === 'idle' || !prevFocusOnSelection.current) {
+    } else if (prevFocusOnSelection.current) {
+      // 選択中の別単語切替: アングル（オフセット方向）は維持し、注視点だけ更新
+      if (focusPhase.current !== 'focused' && focusPhase.current !== 'idle') {
+        viewOffsetProgress.current = 1;
+        zoomProgress.current = 1;
+        setFocusPhase('focused');
+        if (camera instanceof THREE.PerspectiveCamera) {
+          applySelectionViewOffset(camera, size.width, size.height, 1, screenAnchor);
+        }
+      }
+    } else {
       // 非選択 → 選択: 3段階シーケンスを最初から
+      cameraOffsetDirection.current.copy(camera.position).sub(smoothTarget.current);
       setFocusPhase('movingTarget');
       viewOffsetProgress.current = 0;
       zoomProgress.current = 0;
@@ -158,10 +226,13 @@ function CameraControls({
     }
 
     prevFocusOnSelection.current = focusOnSelection;
-  }, [cameraTarget, focusOnSelection, explorationAnchor, camera]);
+  }, [cameraTarget, focusOnSelection, explorationAnchor, camera, screenAnchor, size.height, size.width]);
 
+  /** オフセット方向は維持したまま距離だけ合わせる（選択切替でアングルを保つ） */
   const applyCameraDistance = (distance: number, target: THREE.Vector3) => {
-    cameraOffsetDirection.current.copy(camera.position).sub(target);
+    if (cameraOffsetDirection.current.lengthSq() < 0.0001) {
+      cameraOffsetDirection.current.copy(camera.position).sub(target);
+    }
     if (cameraOffsetDirection.current.lengthSq() < 0.0001) {
       cameraOffsetDirection.current.set(...DEFAULT_CAMERA_POSITION).sub(target);
     }
@@ -171,21 +242,23 @@ function CameraControls({
 
   const rotateCameraAroundTarget = (deltaX: number, deltaY: number) => {
     const target = smoothTarget.current;
-    const offset = cameraOffsetDirection.current.copy(camera.position).sub(target);
-    if (offset.lengthSq() < 0.0001) return;
+    if (cameraOffsetDirection.current.lengthSq() < 0.0001) {
+      cameraOffsetDirection.current.copy(camera.position).sub(target);
+    }
+    if (cameraOffsetDirection.current.lengthSq() < 0.0001) return;
 
     cameraRight.current.setFromMatrixColumn(camera.matrix, 0).normalize();
 
     rotationQuaternion.current.setFromAxisAngle(camera.up, -deltaX * ROTATION_SPEED);
-    offset.applyQuaternion(rotationQuaternion.current);
+    cameraOffsetDirection.current.applyQuaternion(rotationQuaternion.current);
     camera.up.applyQuaternion(rotationQuaternion.current).normalize();
 
     rotationAxis.current.copy(cameraRight.current).normalize();
     rotationQuaternion.current.setFromAxisAngle(rotationAxis.current, -deltaY * ROTATION_SPEED);
-    offset.applyQuaternion(rotationQuaternion.current);
+    cameraOffsetDirection.current.applyQuaternion(rotationQuaternion.current);
     camera.up.applyQuaternion(rotationQuaternion.current).normalize();
 
-    camera.position.copy(target).add(offset);
+    camera.position.copy(target).add(cameraOffsetDirection.current);
     camera.lookAt(target);
   };
 
@@ -194,6 +267,7 @@ function CameraControls({
 
     const handlePointerDown = (event: PointerEvent) => {
       if (!enableRotate || event.button !== 0) return;
+      if (interactionLockRef?.current) return;
       dragState.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
       element.setPointerCapture(event.pointerId);
     };
@@ -222,9 +296,15 @@ function CameraControls({
       event.preventDefault();
 
       const target = smoothTarget.current;
-      const offset = cameraOffsetDirection.current.copy(camera.position).sub(target);
+      if (cameraOffsetDirection.current.lengthSq() < 0.0001) {
+        cameraOffsetDirection.current.copy(camera.position).sub(target);
+      }
       const scale = Math.exp(event.deltaY * WHEEL_ZOOM_SPEED);
-      const distance = THREE.MathUtils.clamp(offset.length() * scale, 0.1, 1000);
+      const distance = THREE.MathUtils.clamp(
+        cameraOffsetDirection.current.length() * scale,
+        0.1,
+        1000,
+      );
       applyCameraDistance(distance, target);
       camera.lookAt(target);
     };
@@ -242,9 +322,19 @@ function CameraControls({
       element.removeEventListener('pointercancel', handlePointerUp);
       element.removeEventListener('wheel', handleWheel);
     };
-  }, [camera, gl, enableRotate, enableZoom]);
+  }, [camera, gl, enableRotate, enableZoom, interactionLockRef]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
+    if (followPlot) {
+      baseTarget.current.set(
+        ...plotPositionFromRow(
+          followPlot,
+          state.clock.elapsedTime * followOrbitTimeScale,
+          followOrbitOverride,
+        ),
+      );
+    }
+
     desiredTarget.current.copy(baseTarget.current);
     const lerpT = 1 - Math.exp(-TARGET_LERP_SPEED * delta);
     smoothTarget.current.lerp(desiredTarget.current, lerpT);
@@ -305,10 +395,42 @@ function CameraControls({
       }
     }
 
-    if (
-      focusOnSelection &&
-      (focusPhase.current === 'focused' || focusPhase.current === 'adjustingZoom')
-    ) {
+    const focusOrZooming =
+      focusOnSelection
+      && (focusPhase.current === 'focused' || focusPhase.current === 'adjustingZoom');
+
+    if (alignProgress.current < 1) {
+      alignProgress.current = Math.min(1, alignProgress.current + delta * VIEW_ALIGN_SPEED);
+      const t = alignProgress.current * alignProgress.current * (3 - 2 * alignProgress.current);
+      cameraOffsetDirection.current
+        .copy(alignFrom.current)
+        .lerp(alignTo.current, t)
+        .normalize()
+        .multiplyScalar(focusDistance);
+      camera.position.copy(smoothTarget.current).add(cameraOffsetDirection.current);
+      camera.up.copy(worldUp);
+      camera.lookAt(smoothTarget.current);
+
+      // 視線まわりにロールし、感情方向の画面上の向きを左上に合わせる
+      alignViewForward.current.copy(smoothTarget.current).sub(camera.position).normalize();
+      alignScreen.current
+        .copy(alignDir.current)
+        .addScaledVector(alignViewForward.current, -alignDir.current.dot(alignViewForward.current));
+      if (alignScreen.current.lengthSq() > 1e-8) {
+        alignScreen.current.normalize();
+        cameraRight.current.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+        const camUp = rotationAxis.current.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+        const currentAngle = Math.atan2(
+          alignScreen.current.dot(camUp),
+          alignScreen.current.dot(cameraRight.current),
+        );
+        const desiredAngle = Math.atan2(1, -1); // 画面左上
+        const roll = desiredAngle - currentAngle;
+        camera.up.copy(camUp).applyAxisAngle(alignViewForward.current, roll).normalize();
+        camera.lookAt(smoothTarget.current);
+        cameraOffsetDirection.current.copy(camera.position).sub(smoothTarget.current);
+      }
+    } else if (focusOrZooming) {
       const distance =
         focusPhase.current === 'focused'
           ? focusDistance
@@ -484,6 +606,8 @@ export function SpaceCanvas({
   > | null>(null);
   const [isDefaultView, setIsDefaultView] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [viewAlignRequest, setViewAlignRequest] = useState<CameraViewAlignRequest | null>(null);
+  const cameraInteractionLockRef = useRef(false);
   const selectedPlot = useMemo(
     () => plots.find((plot) => plot.word_id === selectedId) ?? null,
     [plots, selectedId],
@@ -493,16 +617,18 @@ export function SpaceCanvas({
     [plots, hoveredId],
   );
   const mixedOrbitOverrides = useMemo(() => createMixedPlotOrbitOverrides(plots), [plots]);
-  const isSelectedOrbitingPlot = explorationMode && selectedPlot ? isPureEmotionPlot(selectedPlot) : false;
   const selectedMixedOrbit = selectedPlot ? mixedOrbitOverrides.get(selectedPlot.word_id) : undefined;
+  const isSelectedPureOrbiting = explorationMode && selectedPlot ? isPureEmotionPlot(selectedPlot) : false;
+  /** 純感情の公転、または同意義の混合回転グループ */
+  const isSelectedOrbitingPlot = isSelectedPureOrbiting || Boolean(explorationMode && selectedMixedOrbit);
   const selectedOrbitCenter = useMemo((): [number, number, number] | null => {
-    if (!isSelectedOrbitingPlot || !selectedPlot) {
+    if (!isSelectedPureOrbiting || !selectedPlot) {
       return null;
     }
 
     const center = getEmotionCenter(selectedPlot.primaryId);
     return [center.x, center.y, center.z];
-  }, [isSelectedOrbitingPlot, selectedPlot?.primaryId]);
+  }, [isSelectedPureOrbiting, selectedPlot?.primaryId]);
 
   const cameraTarget = useMemo((): [number, number, number] => {
     if (isDefaultView || !selectedId) {
@@ -513,16 +639,9 @@ export function SpaceCanvas({
       return DEFAULT_CAMERA_TARGET;
     }
 
-    if (selectedOrbitCenter) {
-      return selectedOrbitCenter;
-    }
-
-    if (selectedMixedOrbit) {
-      return selectedMixedOrbit.center;
-    }
-
+    // 公転・同意義回転中も単語自体を中心にする（followPlot が毎フレーム追従）
     return plotPositionFromRow(selectedPlot, 0, selectedMixedOrbit);
-  }, [isDefaultView, selectedId, selectedPlot, selectedOrbitCenter, selectedMixedOrbit]);
+  }, [isDefaultView, selectedId, selectedPlot, selectedMixedOrbit]);
 
   const nearbyPlotIds = useMemo(() => {
     if (!selectedId || isDefaultView) {
@@ -530,7 +649,10 @@ export function SpaceCanvas({
     }
 
     if (explorationMode) {
-      return getNearbyPlotIds(plots, selectedId, EXPLORATION_NEARBY_RADIUS, mixedOrbitOverrides);
+      return getNearbyPlotIds(plots, selectedId, EXPLORATION_NEARBY_RADIUS, mixedOrbitOverrides, {
+        sameEmotionSystemOnly: true,
+        maxMovable: MAX_MOVABLE_NEARBY_STARS,
+      });
     }
 
     return getNearbyPlotIds(plots, selectedId, undefined, mixedOrbitOverrides);
@@ -557,84 +679,66 @@ export function SpaceCanvas({
     return plots.filter((plot) => plot.word_id === selectedId || nearbyPlotIds.has(plot.word_id));
   }, [explorationMode, nearbyPlotIds, plots, selectedId]);
 
-  const distantPlots = useMemo(() => {
-    if (!explorationMode || !nearbyPlotIds) {
+  const distantSameSystemPlots = useMemo(() => {
+    if (!explorationMode || !nearbyPlotIds || !selectedPlot) {
       return [];
     }
 
-    return plots.filter((plot) => plot.word_id !== selectedId && !nearbyPlotIds.has(plot.word_id));
-  }, [explorationMode, nearbyPlotIds, plots, selectedId]);
+    return plots.filter(
+      (plot) =>
+        plot.word_id !== selectedId
+        && plot.primaryId === selectedPlot.primaryId
+        && !nearbyPlotIds.has(plot.word_id),
+    );
+  }, [explorationMode, nearbyPlotIds, plots, selectedId, selectedPlot]);
+
+  const distantOtherSystemPlots = useMemo(() => {
+    if (!explorationMode || !nearbyPlotIds || !selectedPlot) {
+      return [];
+    }
+
+    return plots.filter(
+      (plot) =>
+        plot.word_id !== selectedId
+        && plot.primaryId !== selectedPlot.primaryId
+        && !nearbyPlotIds.has(plot.word_id),
+    );
+  }, [explorationMode, nearbyPlotIds, plots, selectedId, selectedPlot]);
 
   const isExplorationFocused = explorationMode && !isDefaultView && selectedId !== null;
 
   const warpGatePlots = useMemo(() => {
-    if (!explorationMode || isDefaultView) {
+    if (!explorationMode || isDefaultView || !selectedPlot) {
       return [];
     }
 
-    const hasWarpTarget = (secondaryId: EmotionId) =>
-      plots.some((targetPlot) => targetPlot.primaryId === secondaryId);
-
-    const strongestByPair = new Map<string, number>();
-    for (const plot of plots) {
-      const params = rowToEmotionParams(plot);
-      if (params.isPure || params.primaryId === params.secondaryId) {
-        continue;
-      }
-      if (!hasWarpTarget(params.secondaryId)) {
-        continue;
-      }
-
-      const key = `${params.primaryId}:${params.secondaryId}`;
-      strongestByPair.set(key, Math.max(strongestByPair.get(key) ?? -Infinity, params.intensity));
+    const selectedParams = rowToEmotionParams(selectedPlot);
+    // 副感情が一致する混合感情のときだけゲートを出す
+    if (selectedParams.isPure || selectedParams.secondaryId === selectedParams.primaryId) {
+      return [];
     }
 
-    return plots.filter((plot) => {
-      const params = rowToEmotionParams(plot);
-      if (params.isPure || params.primaryId === params.secondaryId) {
-        return false;
-      }
-      if (!hasWarpTarget(params.secondaryId)) {
-        return false;
-      }
-
-      // 選択中の混合感情は、副感情星系へのゲートを必ず出す
-      if (plot.word_id === selectedId) {
-        return true;
-      }
-
-      const key = `${params.primaryId}:${params.secondaryId}`;
-      const strongestIntensity = strongestByPair.get(key) ?? -Infinity;
-      return params.intensity >= strongestIntensity;
-    });
-  }, [explorationMode, isDefaultView, plots, selectedId]);
+    return [selectedPlot];
+  }, [explorationMode, isDefaultView, selectedPlot]);
 
   const selectedWarpGatePlot = useMemo(() => {
-    if (!selectedPlot) {
+    if (!selectedPlot || warpGatePlots.length === 0) {
       return null;
     }
 
-    const selectedParams = rowToEmotionParams(selectedPlot);
-    if (
-      !selectedParams.isPure
-      && selectedParams.primaryId !== selectedParams.secondaryId
-      && warpGatePlots.some((plot) => plot.word_id === selectedPlot.word_id)
-    ) {
-      return selectedPlot;
-    }
+    return selectedPlot;
+  }, [selectedPlot, warpGatePlots]);
 
-    if (selectedMixedOrbit) {
-      return warpGatePlots.find((plot) => {
-        const orbitOverride = mixedOrbitOverrides.get(plot.word_id);
-        return orbitOverride?.groupKey === selectedMixedOrbit.groupKey;
-      }) ?? null;
+  const canEnterSelectedWarpGate = useMemo(() => {
+    if (!selectedPlot || !selectedWarpGatePlot) {
+      return false;
     }
-
-    return warpGatePlots.find((plot) => plot.word_id === selectedPlot.word_id) ?? null;
-  }, [mixedOrbitOverrides, selectedMixedOrbit, selectedPlot, warpGatePlots]);
+    // 強度35以上なら進入可（極限語に限らない）
+    return canEnterWarpGate(selectedPlot);
+  }, [selectedPlot, selectedWarpGatePlot]);
 
   const warpGateTargets = useMemo(() => {
-    if (!selectedWarpGatePlot || !selectedPlot) {
+    if (!selectedWarpGatePlot || !selectedPlot || !canEnterSelectedWarpGate) {
       return [];
     }
 
@@ -645,201 +749,44 @@ export function SpaceCanvas({
       return [];
     }
 
+    // 行き先空間内の「元の主感情」方向の極限語へ着地
     const linked = findLinkedWarpDestination(plots, fromEmotionId, toEmotionId, {
       excludeWordId: selectedId,
-      orbitOverrides: mixedOrbitOverrides,
     });
     return linked ? [linked] : [];
-  }, [mixedOrbitOverrides, plots, selectedId, selectedPlot, selectedWarpGatePlot]);
+  }, [
+    canEnterSelectedWarpGate,
+    plots,
+    selectedId,
+    selectedPlot,
+    selectedWarpGatePlot,
+  ]);
 
   const visibleWarpGateEntries = useMemo((): WarpGateEntry[] => {
-    const entries: WarpGateEntry[] = [];
-    const seenGroups = new Set<string>();
-    const currentSystemId = selectedPlot?.primaryId ?? null;
-
-    for (const plot of warpGatePlots) {
-      // 自身の星系へのゲートは出さない
-      if (currentSystemId && plot.secondaryId === currentSystemId) {
-        continue;
-      }
-
-      const orbitOverride = mixedOrbitOverrides.get(plot.word_id);
-      const active =
-        orbitOverride && selectedMixedOrbit
-          ? orbitOverride.groupKey === selectedMixedOrbit.groupKey
-          : plot.word_id === selectedId;
-
-      if (orbitOverride) {
-        if (seenGroups.has(orbitOverride.groupKey)) {
-          continue;
-        }
-        seenGroups.add(orbitOverride.groupKey);
-
-        const groupIsNearby = plots.some((candidate) => {
-          const candidateOverride = mixedOrbitOverrides.get(candidate.word_id);
-          return candidateOverride?.groupKey === orbitOverride.groupKey && nearbyPlotIds?.has(candidate.word_id);
-        });
-
-        if (!active && !groupIsNearby) {
-          continue;
-        }
-
-        entries.push({
-          key: `warp-gate-group-${orbitOverride.groupKey}`,
-          plot,
-          orbitOverride,
-          sourceOverride: orbitOverride.center,
-          active: Boolean(active),
-        });
-        continue;
-      }
-
-      if (!active && (!nearbyPlotIds || !nearbyPlotIds.has(plot.word_id))) {
-        continue;
-      }
-
-      entries.push({
-        key: `warp-gate-${plot.word_id}`,
-        plot,
-        active: Boolean(active),
-      });
-    }
-
-    return entries;
-  }, [mixedOrbitOverrides, nearbyPlotIds, plots, selectedId, selectedMixedOrbit, selectedPlot?.primaryId, warpGatePlots]);
-
-  const pureTargetsByEmotion = useMemo(() => {
-    const map = new Map<EmotionId, UserPlotRow[]>();
-    for (const plot of plots) {
-      if (!isPureEmotionPlot(plot)) {
-        continue;
-      }
-      const list = map.get(plot.primaryId) ?? [];
-      list.push(plot);
-      map.set(plot.primaryId, list);
-    }
-    return map;
-  }, [plots]);
-
-  const primaryPlotsByEmotion = useMemo(() => {
-    const map = new Map<EmotionId, UserPlotRow[]>();
-    for (const plot of plots) {
-      const list = map.get(plot.primaryId) ?? [];
-      list.push(plot);
-      map.set(plot.primaryId, list);
-    }
-    return map;
-  }, [plots]);
-
-  const emotionSystemWarpGates = useMemo((): EmotionSystemWarpGateEntry[] => {
-    if (!explorationMode) {
+    if (!selectedWarpGatePlot || !selectedPlot) {
       return [];
     }
 
-    const currentSystemId = selectedPlot?.primaryId ?? null;
-    const selectedPosition = selectedPlot && !isDefaultView
-      ? plotPositionFromRow(selectedPlot, 0, mixedOrbitOverrides.get(selectedPlot.word_id))
-      : null;
-
-    const directedPairs = new Set<string>();
-    for (const plot of plots) {
-      const params = rowToEmotionParams(plot);
-      if (params.isPure || params.primaryId === params.secondaryId) {
-        continue;
-      }
-      if (!plots.some((candidate) => candidate.primaryId === params.secondaryId)) {
-        continue;
-      }
-      directedPairs.add(`${params.primaryId}>${params.secondaryId}`);
+    const params = rowToEmotionParams(selectedWarpGatePlot);
+    if (params.secondaryId === selectedPlot.primaryId) {
+      return [];
     }
 
-    const linkedReturnGates: EmotionSystemWarpGateEntry[] = [];
-    for (const pairKey of directedPairs) {
-      const [fromId, toId] = pairKey.split('>') as [EmotionId, EmotionId];
-      if (directedPairs.has(`${toId}>${fromId}`)) {
-        continue;
-      }
-      // 逆方向プロットが無いとき、to 星系の from 向き端に戻りゲートを補う
-      if (currentSystemId && fromId === currentSystemId) {
-        continue;
-      }
+    const anchor = getMixedDirectionPositionAtIntensity(
+      selectedPlot.primaryId,
+      params.secondaryId,
+      WARP_GATE_ANCHOR_INTENSITY,
+    );
 
-      const edgePosition = getFacingEdgePosition(toId, fromId);
-      const linked = findLinkedWarpDestination(plots, toId, fromId, {
-        excludeWordId: selectedId,
-        orbitOverrides: mixedOrbitOverrides,
-      });
-      const nearby = selectedPosition
-        ? Math.hypot(
-            edgePosition[0] - selectedPosition[0],
-            edgePosition[1] - selectedPosition[1],
-            edgePosition[2] - selectedPosition[2],
-          ) <= EMOTION_SYSTEM_GATE_NEARBY_RADIUS
-        : false;
-      const label = resolvePrimaryEmotionLabel(fromId);
-
-      linkedReturnGates.push({
-        key: `linked-return-gate-${toId}-to-${fromId}`,
-        emotionId: fromId,
-        hostSystemId: toId,
-        edgePosition,
-        color: getPrimaryEmotionColor(fromId),
-        hoverLabel: `to${label}空間`,
-        active: nearby && linked !== null,
-        hasTargets: linked !== null,
-      });
-    }
-
-    const systemEdgeGates = ALL_EMOTIONS.flatMap((emotion) => {
-      const emotionId = emotion.id as EmotionId;
-      if (currentSystemId && emotionId === currentSystemId) {
-        return [];
-      }
-
-      const edgePosition = currentSystemId
-        ? getFacingEdgePosition(emotionId, currentSystemId)
-        : getEmotionSystemEdgePosition(emotionId);
-      const linked = currentSystemId
-        ? findLinkedWarpDestination(plots, currentSystemId, emotionId, {
-            excludeWordId: selectedId,
-            orbitOverrides: mixedOrbitOverrides,
-          })
-        : null;
-      const targets = linked
-        ? [linked]
-        : (pureTargetsByEmotion.get(emotionId) ?? primaryPlotsByEmotion.get(emotionId) ?? []);
-      const nearby = selectedPosition
-        ? Math.hypot(
-            edgePosition[0] - selectedPosition[0],
-            edgePosition[1] - selectedPosition[1],
-            edgePosition[2] - selectedPosition[2],
-          ) <= EMOTION_SYSTEM_GATE_NEARBY_RADIUS
-        : false;
-      const label = resolvePrimaryEmotionLabel(emotionId);
-
-      return [{
-        key: `emotion-system-gate-${emotionId}`,
-        emotionId,
-        hostSystemId: emotionId,
-        edgePosition,
-        color: getPrimaryEmotionColor(emotionId),
-        hoverLabel: `to${label}空間`,
-        active: nearby && targets.length > 0,
-        hasTargets: targets.length > 0,
-      }];
-    });
-
-    return [...systemEdgeGates, ...linkedReturnGates];
-  }, [
-    explorationMode,
-    isDefaultView,
-    mixedOrbitOverrides,
-    plots,
-    primaryPlotsByEmotion,
-    pureTargetsByEmotion,
-    selectedId,
-    selectedPlot,
-  ]);
+    return [{
+      key: `warp-gate-${selectedPlot.primaryId}-to-${params.secondaryId}`,
+      plot: selectedWarpGatePlot,
+      sourceOverride: anchor,
+      anchorAtSource: true,
+      // 同じ副感情内で最強度の語を選んでいるときだけ進入可
+      active: canEnterSelectedWarpGate,
+    }];
+  }, [canEnterSelectedWarpGate, selectedPlot, selectedWarpGatePlot]);
 
   const handleWarpGateSelect = useCallback(() => {
     const target = warpGateTargets[0];
@@ -848,47 +795,28 @@ export function SpaceCanvas({
     }
 
     setIsDefaultView(false);
-    onWordSelect(target.word_id);
+    onWordSelect(target.word_id, { viaWarp: true });
   }, [onWordSelect, warpGateTargets]);
 
-  const handleEmotionSystemWarp = useCallback(
-    (targetEmotionId: EmotionId, hostSystemId?: EmotionId) => {
-      const fromEmotionId = hostSystemId && hostSystemId !== targetEmotionId
-        ? hostSystemId
-        : selectedPlot?.primaryId;
-
-      if (!fromEmotionId || fromEmotionId === targetEmotionId) {
-        return;
-      }
-
-      const linked = findLinkedWarpDestination(plots, fromEmotionId, targetEmotionId, {
-        excludeWordId: selectedId,
-        orbitOverrides: mixedOrbitOverrides,
-      });
-      if (!linked) {
-        return;
-      }
-
-      setIsDefaultView(false);
-      onWordSelect(linked.word_id);
-    },
-    [mixedOrbitOverrides, onWordSelect, plots, selectedId, selectedPlot?.primaryId],
-  );
-
-  const getOrbitTimeScale = (plot: UserPlotRow | null): number =>
-    isSelectedOrbitingPlot && selectedPlot && plot && isPureEmotionPlot(plot) && plot.primaryId === selectedPlot.primaryId
+  const getOrbitTimeScale = useCallback((plot: UserPlotRow | null | undefined): number => (
+    isSelectedPureOrbiting && selectedPlot && plot && isPureEmotionPlot(plot) && plot.primaryId === selectedPlot.primaryId
       ? SELECTED_ORBIT_TIME_SCALE
-      : 1;
+      : 1
+  ), [isSelectedPureOrbiting, selectedPlot]);
 
-  const handleWordSelect = (id: string) => {
+  const handleWordSelect = useCallback((id: string) => {
     setIsDefaultView(false);
     onWordSelect(id);
-  };
+  }, [onWordSelect]);
 
-  const handleWordHover = (id: string | null) => {
+  const handleWordHover = useCallback((id: string | null) => {
     setHoveredId(id);
     onHoveredWordChange?.(id);
-  };
+  }, [onHoveredWordChange]);
+
+  const handleLookDirection = useCallback((direction: [number, number, number]) => {
+    setViewAlignRequest({ direction, nonce: Date.now() });
+  }, []);
 
   const handleCameraStateChange = useCallback(
     (state: Pick<MinimapSyncState, 'cameraPosition' | 'cameraTarget' | 'cameraUp'>) => {
@@ -959,13 +887,12 @@ export function SpaceCanvas({
           focusOnSelection={isExplorationFocused || (!explorationMode && !isDefaultView && selectedId !== null)}
           explorationFocus={isExplorationFocused}
           explorationAnchor={EXPLORATION_SCREEN_ANCHOR}
-          explorationDistance={
-            isSelectedOrbitingPlot
-              ? EXPLORATION_ORBIT_CAMERA_DISTANCE
-              : selectedMixedOrbit
-                ? EXPLORATION_MIXED_ORBIT_CAMERA_DISTANCE
-                : EXPLORATION_CAMERA_DISTANCE
-          }
+          explorationDistance={EXPLORATION_CAMERA_DISTANCE}
+          followPlot={isSelectedOrbitingPlot ? selectedPlot : null}
+          followOrbitOverride={selectedMixedOrbit}
+          followOrbitTimeScale={getOrbitTimeScale(selectedPlot)}
+          viewAlignRequest={viewAlignRequest}
+          interactionLockRef={cameraInteractionLockRef}
           onCameraStateChange={handleCameraStateChange}
         />
         <MinimapFocusTracker
@@ -1003,10 +930,25 @@ export function SpaceCanvas({
               decay={2}
             />
           )}
-          {explorationMode && selectedPlot && !isDefaultView && !isSelectedOrbitingPlot && (
+          {explorationMode && selectedPlot && !isDefaultView && !isSelectedPureOrbiting && (
             <GravityAttractionParticles
               plot={selectedPlot}
               orbitOverride={mixedOrbitOverrides.get(selectedPlot.word_id)}
+              guideStars={interactivePlots
+                .filter((candidate) => candidate.word_id !== selectedPlot.word_id)
+                .map((candidate) =>
+                  plotPositionFromRow(candidate, 0, mixedOrbitOverrides.get(candidate.word_id)),
+                )}
+            />
+          )}
+          {explorationMode && selectedPlot && !isDefaultView && (
+            <EmotionDirectionArrows
+              plot={selectedPlot}
+              plots={plots}
+              orbitOverride={mixedOrbitOverrides.get(selectedPlot.word_id)}
+              orbitTimeScale={getOrbitTimeScale(selectedPlot)}
+              onLookDirection={handleLookDirection}
+              interactionLockRef={cameraInteractionLockRef}
             />
           )}
           {visibleWarpGateEntries.map((entry) => (
@@ -1016,24 +958,11 @@ export function SpaceCanvas({
               plot={entry.plot}
               orbitOverride={entry.orbitOverride}
               sourceOverride={entry.sourceOverride}
+              anchorAtSource={entry.anchorAtSource}
               color={getPrimaryEmotionColor(entry.plot.secondaryId)}
               hoverLabel={`to${getEmotionById(entry.plot.secondaryId).label}空間`}
               active={entry.active && warpGateTargets.length > 0}
               onWarp={handleWarpGateSelect}
-              onHoverLabelChange={onHoveredWarpGateChange}
-              onHoverScreenPosition={onHoveredScreenPosition}
-            />
-          ))}
-          {emotionSystemWarpGates.map((entry) => (
-            <WarpGate
-              key={entry.key}
-              targetEmotionId={entry.emotionId}
-              sourceOverride={entry.edgePosition}
-              anchorAtSource
-              color={entry.color}
-              hoverLabel={entry.hoverLabel}
-              active={entry.active}
-              onWarp={() => handleEmotionSystemWarp(entry.emotionId, entry.hostSystemId)}
               onHoverLabelChange={onHoveredWarpGateChange}
               onHoverScreenPosition={onHoveredScreenPosition}
             />
@@ -1046,11 +975,15 @@ export function SpaceCanvas({
               isSelected
               isNearbyVisible
               particleTrail
-              selectedParticleTrail={isSelectedOrbitingPlot}
+              selectedParticleTrail={isSelectedPureOrbiting}
               orbitTimeScale={getOrbitTimeScale(plot)}
             />
           ))}
-          <ExplorationDistantPlotCloud plots={distantPlots} orbitOverrides={mixedOrbitOverrides} />
+          <ExplorationDistantPlotCloud
+            sameSystemPlots={distantSameSystemPlots}
+            otherSystemPlots={distantOtherSystemPlots}
+            orbitOverrides={mixedOrbitOverrides}
+          />
           {interactivePlots.map((plot) => (
             <WordPlot
               key={plot.word_id}

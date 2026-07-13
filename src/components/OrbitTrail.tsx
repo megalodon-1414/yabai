@@ -9,12 +9,12 @@ import { rowToEmotionParams } from '../utils/emotionPlotBridge';
 import { plotPositionFromRow, type PlotOrbitOverride } from '../utils/plotFromUserPlot';
 
 const ORBIT_LINE_WIDTH = 10;
-const PARTICLE_TRAIL_COUNT = 30;
-const SUBTLE_PARTICLE_TRAIL_COUNT = 14;
-const PARTICLE_TRAIL_STEP_SECONDS = 0.45;
-const SELECTED_PARTICLE_TRAIL_STEP_SECONDS = 1.05;
-const PARTICLE_TRAIL_SIZE = 0.0075;
-const SUBTLE_PARTICLE_TRAIL_SIZE = 0.0048;
+const PARTICLE_TRAIL_COUNT = 22;
+const SUBTLE_PARTICLE_TRAIL_COUNT = 12;
+const PARTICLE_TRAIL_STEP_SECONDS = 0.55;
+const SELECTED_PARTICLE_TRAIL_STEP_SECONDS = 1.15;
+const PARTICLE_TRAIL_SIZE = 0.0038;
+const SUBTLE_PARTICLE_TRAIL_SIZE = 0.0026;
 
 interface OrbitTrailProps {
   plot: UserPlotRow;

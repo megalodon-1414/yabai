@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { EmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import type { EmotionUiTheme } from '../utils/emotionUiTheme';
+import { canMoveWithinEmotionSystem } from '../utils/plotFromUserPlot';
 import {
   PLOT_TAGS,
   searchPlotsByQuery,
@@ -24,9 +26,14 @@ interface ExplorationToolsPanelProps {
   uiTheme: EmotionUiTheme;
   plots: UserPlotRow[];
   selectedTagIds: ReadonlySet<PlotTagId>;
+  /** 探索中は同一星系内の単語検索に限定する */
+  currentSystemId?: EmotionId | null;
+  currentPlot?: UserPlotRow | null;
   onToggleTag: (tagId: PlotTagId) => void;
   onSelectWord: (wordId: string) => void;
+  searchGameActive?: boolean;
   onStartSearchGame?: () => void;
+  onQuitSearchGame?: () => void;
 }
 
 function SearchIcon({ color }: { color: string }) {
@@ -68,17 +75,34 @@ export function ExplorationToolsPanel({
   uiTheme,
   plots,
   selectedTagIds,
+  currentSystemId = null,
+  currentPlot = null,
   onToggleTag,
   onSelectWord,
+  searchGameActive = false,
   onStartSearchGame,
+  onQuitSearchGame,
 }: ExplorationToolsPanelProps) {
   const [activeTab, setActiveTab] = useState<ToolsTab | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
 
+  const searchablePlots = useMemo(
+    () => plots.filter((plot) => {
+      if (currentSystemId && plot.primaryId !== currentSystemId) {
+        return false;
+      }
+      if (currentPlot && !canMoveWithinEmotionSystem(currentPlot, plot)) {
+        return false;
+      }
+      return true;
+    }),
+    [currentPlot, currentSystemId, plots],
+  );
+
   const suggestions = useMemo(
-    () => searchPlotsByQuery(plots, searchQuery),
-    [plots, searchQuery],
+    () => searchPlotsByQuery(searchablePlots, searchQuery),
+    [searchablePlots, searchQuery],
   );
 
   useEffect(() => {
@@ -453,26 +477,62 @@ export function ExplorationToolsPanel({
               >
                 サーチゲーム
               </p>
-              <button
-                type="button"
-                onClick={onStartSearchGame}
+              <p
                 style={{
-                  minWidth: '112px',
-                  height: '34px',
-                  padding: '0 16px',
-                  borderRadius: '8px',
-                  border: `1px solid ${uiTheme.accentBorderStrong}`,
-                  background: uiTheme.controlBackground,
-                  color: uiTheme.controlText,
-                  fontSize: '0.82rem',
-                  letterSpacing: '0.1em',
-                  cursor: 'pointer',
-                  boxShadow: `0 0 12px ${uiTheme.accentGlow}`,
-                  transition: UI_COLOR_TRANSITION,
+                  margin: 0,
+                  fontSize: '0.72rem',
+                  lineHeight: 1.5,
+                  color: uiTheme.holoSubtext,
+                  textAlign: 'center',
+                  maxWidth: '200px',
                 }}
               >
-                スタート
-              </button>
+                {searchGameActive
+                  ? 'お題の単語をマップ上で探そう'
+                  : 'お題の単語をマップを渡り歩いて探す'}
+              </p>
+              {searchGameActive ? (
+                <button
+                  type="button"
+                  onClick={onQuitSearchGame}
+                  style={{
+                    minWidth: '112px',
+                    height: '34px',
+                    padding: '0 16px',
+                    borderRadius: '8px',
+                    border: `1px solid ${uiTheme.controlBorder}`,
+                    background: 'transparent',
+                    color: uiTheme.textSecondary,
+                    fontSize: '0.82rem',
+                    letterSpacing: '0.1em',
+                    cursor: 'pointer',
+                    transition: UI_COLOR_TRANSITION,
+                  }}
+                >
+                  終了する
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onStartSearchGame}
+                  style={{
+                    minWidth: '112px',
+                    height: '34px',
+                    padding: '0 16px',
+                    borderRadius: '8px',
+                    border: `1px solid ${uiTheme.accentBorderStrong}`,
+                    background: uiTheme.controlBackground,
+                    color: uiTheme.controlText,
+                    fontSize: '0.82rem',
+                    letterSpacing: '0.1em',
+                    cursor: 'pointer',
+                    boxShadow: `0 0 12px ${uiTheme.accentGlow}`,
+                    transition: UI_COLOR_TRANSITION,
+                  }}
+                >
+                  スタート
+                </button>
+              )}
             </div>
           )}
         </div>

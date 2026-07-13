@@ -134,3 +134,29 @@ export function getEmotionPlotPosition(
     center.z + (dz / len) * dist,
   ];
 }
+
+/** 副感情方向の指定強度における空間位置（ワープゲート配置用） */
+export function getMixedDirectionPositionAtIntensity(
+  primaryId: EmotionPlotParams['primaryId'],
+  secondaryId: EmotionPlotParams['secondaryId'],
+  intensity: number,
+): [number, number, number] {
+  const center = getEmotionCenter(primaryId);
+  const sphereRadius = getEmotionSphereRadius(primaryId);
+  const secondaryCenter = getEmotionCenter(secondaryId);
+  const dx = secondaryCenter.x - center.x;
+  const dy = secondaryCenter.y - center.y;
+  const dz = secondaryCenter.z - center.z;
+  const len = Math.hypot(dx, dy, dz) || 1;
+  // 語の位置スケール(0–50)基準。55なら最外語より少し外側に置く
+  const intensityT = Math.max(0, intensity) / MIXED_INTENSITY_POSITION_MAX;
+  const minDist = sphereRadius * 0.52;
+  const maxDist = sphereRadius * 1.46;
+  const dist = minDist + intensityT * (maxDist - minDist);
+
+  return [
+    center.x + (dx / len) * dist,
+    center.y + (dy / len) * dist,
+    center.z + (dz / len) * dist,
+  ];
+}
