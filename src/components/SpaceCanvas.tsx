@@ -66,6 +66,8 @@ interface WarpGateEntry {
 
 interface SpaceCanvasProps {
   plots: UserPlotRow[];
+  /** ワープ着地の探索用（タグ未フィルタの全プロット）。省略時は plots */
+  warpDestinationPlots?: UserPlotRow[];
   selectedId: string | null;
   explorationMode?: boolean;
   flowLabelExpiresAt?: Readonly<Record<string, number>>;
@@ -586,6 +588,7 @@ function MinimapFocusTracker({
 
 export function SpaceCanvas({
   plots,
+  warpDestinationPlots,
   selectedId,
   explorationMode = false,
   flowLabelExpiresAt,
@@ -614,7 +617,7 @@ export function SpaceCanvas({
     [plots, selectedId],
   );
   const hoveredPlot = useMemo(
-    () => plots.find((plot) => plot.word_id === hoveredId) ?? null,
+    () => findPlotByKey(plots, hoveredId),
     [plots, hoveredId],
   );
   const mixedOrbitOverrides = useMemo(() => createMixedPlotOrbitOverrides(plots), [plots]);
@@ -750,10 +753,15 @@ export function SpaceCanvas({
       return [];
     }
 
-    // 行き先空間内の「元の主感情」方向の極限語へ着地
-    const linked = findLinkedWarpDestination(plots, fromEmotionId, toEmotionId, {
-      excludeWordId: selectedId,
-    });
+    // 行き先空間の純感情（循環上）へ着地（タグフィルタ前の全プロットから探す）
+    const linked = findLinkedWarpDestination(
+      warpDestinationPlots ?? plots,
+      fromEmotionId,
+      toEmotionId,
+      {
+        excludeWordId: selectedId,
+      },
+    );
     return linked ? [linked] : [];
   }, [
     canEnterSelectedWarpGate,
@@ -761,6 +769,7 @@ export function SpaceCanvas({
     selectedId,
     selectedPlot,
     selectedWarpGatePlot,
+    warpDestinationPlots,
   ]);
 
   const visibleWarpGateEntries = useMemo((): WarpGateEntry[] => {
@@ -960,6 +969,8 @@ export function SpaceCanvas({
               orbitOverride={entry.orbitOverride}
               sourceOverride={entry.sourceOverride}
               anchorAtSource={entry.anchorAtSource}
+              approachHitPlot={selectedPlot}
+              approachHitOrbitOverride={selectedPlot ? mixedOrbitOverrides.get(selectedPlot.word_id) : undefined}
               color={getPrimaryEmotionColor(entry.plot.secondaryId)}
               hoverLabel={`to${getEmotionById(entry.plot.secondaryId).label}空間`}
               active={entry.active && warpGateTargets.length > 0}
@@ -997,6 +1008,11 @@ export function SpaceCanvas({
               plotLabelDisplayMode={plotLabelDisplayMode}
               orbitOverride={mixedOrbitOverrides.get(plot.word_id)}
               orbitTimeScale={getOrbitTimeScale(plot)}
+              suppressPointerHit={
+                getPlotKey(plot) === selectedId
+                && warpGateTargets.length > 0
+                && canEnterSelectedWarpGate
+              }
               onHoverChange={handleWordHover}
               onSelect={handleWordSelect}
             />

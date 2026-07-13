@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import type { EmotionUiTheme } from '../utils/emotionUiTheme';
-import { canMoveWithinEmotionSystem } from '../utils/plotFromUserPlot';
-import { getPlotKey } from '../utils/plotIdentity';
+import { getPlotKey, isWarpLandingPlot } from '../utils/plotIdentity';
+import { isExplorationDummyPlot } from '../utils/explorationDummyPlots';
 import {
   PLOT_TAGS,
   searchPlotsByQuery,
@@ -27,11 +27,11 @@ interface ExplorationToolsPanelProps {
   uiTheme: EmotionUiTheme;
   plots: UserPlotRow[];
   selectedTagIds: ReadonlySet<PlotTagId>;
-  /** 探索中は同一星系内の単語検索に限定する */
+  /** 探索中は同一星系内の単語検索に限定する（未使用・互換用） */
   currentSystemId?: EmotionId | null;
   currentPlot?: UserPlotRow | null;
   onToggleTag: (tagId: PlotTagId) => void;
-  onSelectWord: (wordId: string) => void;
+  onSelectWord: (wordId: string, options?: { viaSearch?: boolean }) => void;
   searchGameActive?: boolean;
   onStartSearchGame?: () => void;
   onQuitSearchGame?: () => void;
@@ -76,8 +76,8 @@ export function ExplorationToolsPanel({
   uiTheme,
   plots,
   selectedTagIds,
-  currentSystemId = null,
-  currentPlot = null,
+  currentSystemId: _currentSystemId = null,
+  currentPlot: _currentPlot = null,
   onToggleTag,
   onSelectWord,
   searchGameActive = false,
@@ -90,15 +90,12 @@ export function ExplorationToolsPanel({
 
   const searchablePlots = useMemo(
     () => plots.filter((plot) => {
-      if (currentSystemId && plot.primaryId !== currentSystemId) {
-        return false;
-      }
-      if (currentPlot && !canMoveWithinEmotionSystem(currentPlot, plot)) {
+      if (isWarpLandingPlot(plot) || isExplorationDummyPlot(plot.word_id)) {
         return false;
       }
       return true;
     }),
-    [currentPlot, currentSystemId, plots],
+    [plots],
   );
 
   const suggestions = useMemo(
@@ -368,7 +365,7 @@ export function ExplorationToolsPanel({
                   <button
                     key={getPlotKey(plot)}
                     type="button"
-                    onClick={() => onSelectWord(getPlotKey(plot))}
+                    onClick={() => onSelectWord(getPlotKey(plot), { viaSearch: true })}
                     style={{
                       display: 'block',
                       width: '100%',

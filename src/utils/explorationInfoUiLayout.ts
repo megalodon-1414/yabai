@@ -17,6 +17,7 @@ function scaleRem(value: number, scale: number): string {
 export interface ExplorationInfoUiLayout {
   scale: number;
   uiGroupRightMargin: number;
+  panelGap: number;
   nextWordPanel: {
     x: number;
     y: number;
@@ -49,6 +50,7 @@ export interface ExplorationInfoUiLayout {
     borderRadius: number;
     gap: number;
     innerGap: number;
+    bodyTextGap: number;
     innerMinHeight: number;
     wordColumnWidth: number;
     tickerHeight: number;
@@ -57,6 +59,7 @@ export interface ExplorationInfoUiLayout {
     wordFontSize: string;
     bodyFontSize: string;
     dlFontSize: string;
+    usageFontSize: string;
     metaFontSize: string;
     bodyMaxHeight: number;
     intensityBarWidth: number;
@@ -79,7 +82,7 @@ export function getExplorationInfoUiLayout(
 
   const uiGroupRightMargin = Math.max(s(32), viewportWidth * 0.06);
   const currentWordWidth = s(300);
-  const currentWordHeight = s(360);
+  const currentWordHeight = s(510);
   const currentWordX = viewportWidth - currentWordWidth - uiGroupRightMargin;
   const uiGroupTop = Math.max(s(16), viewportHeight * 0.5 - currentWordHeight / 2);
   const panelGap = s(24);
@@ -97,6 +100,7 @@ export function getExplorationInfoUiLayout(
   return {
     scale,
     uiGroupRightMargin,
+    panelGap,
     nextWordPanel: {
       x: currentWordX - panelGap - nextWordWidth,
       y: uiGroupTop,
@@ -127,18 +131,20 @@ export function getExplorationInfoUiLayout(
       paddingX: s(16),
       paddingY: s(18),
       borderRadius: s(10),
-      gap: s(18),
-      innerGap: s(12),
-      innerMinHeight: s(324),
+      gap: s(16),
+      innerGap: s(16),
+      bodyTextGap: s(28),
+      innerMinHeight: s(450),
       wordColumnWidth: s(50),
       tickerHeight: s(18),
       tickerFontSize: scaleRem(0.68, scale),
       sectionLabelFontSize: scaleRem(0.68, scale),
       wordFontSize: scaleRem(2.25, scale),
-      bodyFontSize: scaleRem(0.92, scale),
+      bodyFontSize: scaleRem(1.564, scale),
       dlFontSize: scaleRem(0.84, scale),
+      usageFontSize: scaleRem(1.092, scale),
       metaFontSize: scaleRem(0.68, scale),
-      bodyMaxHeight: s(320),
+      bodyMaxHeight: s(450),
       intensityBarWidth: s(8),
       intensityBarHeight: s(160),
       columnGap: s(14),

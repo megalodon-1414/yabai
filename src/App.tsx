@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SpaceCanvas } from './components/SpaceCanvas';
 import { EmotionMinimap, MAP_WIDTH } from './components/EmotionMinimap';
 import { ExplorationToolsPanel } from './components/ExplorationToolsPanel';
@@ -184,15 +184,15 @@ function App() {
 
   useEffect(() => {
     if (!isExplorationMode || isLoading) return;
-    if (visiblePlots.length === 0) return;
+    if (displayPlots.length === 0) return;
 
     setSelectedId((prev) => {
-      if (prev && findPlotByKey(visiblePlots, prev)) {
+      if (prev && findPlotByKey(displayPlots, prev)) {
         return prev;
       }
-      return pickPreferredPlotId(visiblePlots);
+      return pickPreferredPlotId(displayPlots);
     });
-  }, [isExplorationMode, isLoading, visiblePlots]);
+  }, [isExplorationMode, isLoading, displayPlots]);
 
   const infoPanelPlot = useMemo(
     () => findPlotByKey(displayPlots, infoPanelWordId),
@@ -263,11 +263,16 @@ function App() {
     setPlots((prev) => [...prev, plot]);
   };
 
-  const handleWordSelect = (id: string, options?: { viaWarp?: boolean }) => {
-    if (isExplorationMode && !options?.viaWarp && selectedId) {
+  const handleWordSelect = (id: string, options?: { viaWarp?: boolean; viaSearch?: boolean }) => {
+    const next = findPlotByKey(displayPlots, id);
+    if (!next) {
+      return;
+    }
+
+    const bypassMovementRules = Boolean(options?.viaWarp || options?.viaSearch);
+    if (isExplorationMode && !bypassMovementRules && selectedId) {
       const current = findPlotByKey(displayPlots, selectedId);
-      const next = findPlotByKey(displayPlots, id);
-      if (current && next) {
+      if (current) {
         // 星系間の移動はワープゲート経由のみ
         if (current.primaryId !== next.primaryId) {
           return;
@@ -279,12 +284,9 @@ function App() {
       }
     }
 
-    setSelectedId(id);
-    if (!isExplorationMode) {
-      const selected = findPlotByKey(displayPlots, id);
-      if (selected && !isExplorationDummyPlot(selected.word_id)) {
-        setIsEditorOpen(true);
-      }
+    setSelectedId(getPlotKey(next));
+    if (!isExplorationMode && !isExplorationDummyPlot(next.word_id)) {
+      setIsEditorOpen(true);
     }
   };
 
@@ -458,7 +460,55 @@ function App() {
     () => getExplorationInfoUiLayout(mainSize.width, mainSize.height, nextWordLabelLength),
     [mainSize.width, mainSize.height, nextWordLabelLength],
   );
-  const { nextWordPanel, currentWordPanel } = infoUi;
+  const { nextWordPanel, currentWordPanel, uiGroupRightMargin, panelGap } = infoUi;
+  const meaningText =
+    infoPanelPlot?.meaning?.trim() ||
+    'この単語の意味データはまだ登録されていません。';
+  const meaningWrapWidth = useMemo(() => {
+    const rem = Number.parseFloat(currentWordPanel.bodyFontSize);
+    const fontPx = (Number.isFinite(rem) ? rem : 1) * 16;
+    const charAdvance = fontPx * 1.9;
+    const charsPerColumn = Math.max(
+      1,
+      Math.floor(currentWordPanel.bodyMaxHeight / charAdvance),
+    );
+    const columns = Math.max(1, Math.ceil(Array.from(meaningText).length / charsPerColumn));
+    return Math.ceil(columns * fontPx * 1.25);
+  }, [meaningText, currentWordPanel.bodyFontSize, currentWordPanel.bodyMaxHeight]);
+
+  const currentWordAsideRef = useRef<HTMLElement>(null);
+  const [measuredCurrentWordWidth, setMeasuredCurrentWordWidth] = useState(currentWordPanel.width);
+
+  useLayoutEffect(() => {
+    const el = currentWordAsideRef.current;
+    if (!el) {
+      setMeasuredCurrentWordWidth(currentWordPanel.width);
+      return;
+    }
+    const syncWidth = () => {
+      setMeasuredCurrentWordWidth(Math.max(currentWordPanel.width, el.offsetWidth));
+    };
+    syncWidth();
+    const observer = new ResizeObserver(syncWidth);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [
+    currentWordPanel.width,
+    infoPanelPlot,
+    meaningText,
+    meaningWrapWidth,
+    isInfoPanelVisible,
+  ]);
+
+  const nextWordPanelLeft = Math.max(
+    0,
+    mainSize.width - uiGroupRightMargin - measuredCurrentWordWidth - panelGap - nextWordPanel.width,
+  );
+  const currentWordPanelLeft = Math.max(
+    0,
+    mainSize.width - uiGroupRightMargin - measuredCurrentWordWidth,
+  );
+
   const showHoverGuide =
     isExplorationMode &&
     isInfoPanelVisible &&
@@ -494,7 +544,8 @@ function App() {
         )}
 
         <SpaceCanvas
-          plots={visiblePlots}
+          plots={isExplorationMode ? displayPlots : visiblePlots}
+          warpDestinationPlots={displayPlots}
           selectedId={selectedId}
           explorationMode={isExplorationMode}
           flowLabelExpiresAt={flowLabelExpiresAt}
@@ -544,7 +595,7 @@ function App() {
             <ExplorationToolsPanel
               width={MAP_WIDTH}
               uiTheme={emotionUiTheme}
-              plots={visiblePlots}
+              plots={displayPlots}
               selectedTagIds={selectedTagIds}
               currentSystemId={selectedPlot?.primaryId ?? null}
               currentPlot={selectedPlot}
@@ -626,7 +677,7 @@ function App() {
               <line
                 x1={selectedScreenPoint.x}
                 y1={selectedScreenPoint.y}
-                x2={currentWordPanel.x}
+                x2={currentWordPanelLeft}
                 y2={currentWordPanel.y + currentWordPanel.height / 2}
                 stroke={emotionUiTheme.guideLine}
                 strokeWidth={1}
@@ -637,7 +688,7 @@ function App() {
               <line
                 x1={hoveredScreenPoint.x}
                 y1={hoveredScreenPoint.y}
-                x2={nextWordPanel.x + nextWordPanel.guideAnchorX}
+                x2={nextWordPanelLeft + nextWordPanel.guideAnchorX}
                 y2={nextWordPanel.y + nextWordPanel.guideAnchorY}
                 stroke={emotionUiTheme.guideLineHover}
                 strokeWidth={1}
@@ -651,7 +702,7 @@ function App() {
           <div
             style={{
               position: 'absolute',
-              left: `${nextWordPanel.x}px`,
+              left: `${nextWordPanelLeft}px`,
               top: `${nextWordPanel.y}px`,
               zIndex: 2,
               width: `${nextWordPanel.width}px`,
@@ -793,11 +844,15 @@ function App() {
 
         {isExplorationMode && infoPanelPlot && (
           <aside
+            ref={currentWordAsideRef}
             style={{
               position: 'absolute',
               top: `${currentWordPanel.y}px`,
-              left: `${currentWordPanel.x}px`,
-              width: `${currentWordPanel.width}px`,
+              right: `${uiGroupRightMargin}px`,
+              left: 'auto',
+              width: 'max-content',
+              maxWidth: `${Math.max(currentWordPanel.width, mainSize.width - uiGroupRightMargin - 24)}px`,
+              height: 'max-content',
               minHeight: `${currentWordPanel.height}px`,
               zIndex: 2,
               padding: `${currentWordPanel.paddingY}px ${currentWordPanel.paddingX}px`,
@@ -811,6 +866,8 @@ function App() {
               pointerEvents: 'none',
               opacity: isInfoPanelVisible ? 1 : 0,
               transition: `opacity 150ms ease, ${UI_COLOR_TRANSITION}`,
+              overflow: 'visible',
+              boxSizing: 'border-box',
             }}
           >
             <div
@@ -820,8 +877,8 @@ function App() {
                 alignItems: 'stretch',
                 justifyContent: 'flex-start',
                 gap: `${currentWordPanel.gap}px`,
-                height: '100%',
                 minHeight: `${currentWordPanel.innerMinHeight}px`,
+                overflow: 'visible',
               }}
             >
               <div
@@ -936,9 +993,10 @@ function App() {
                   display: 'flex',
                   flexDirection: 'row-reverse',
                   alignItems: 'flex-start',
-                  gap: `${currentWordPanel.innerGap}px`,
-                  minWidth: 0,
-                  maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
+                  justifyContent: 'flex-start',
+                  gap: `${currentWordPanel.bodyTextGap}px`,
+                  flex: '0 0 auto',
+                  overflow: 'visible',
                 }}
               >
                 <p
@@ -946,16 +1004,18 @@ function App() {
                     writingMode: 'vertical-rl',
                     textOrientation: 'mixed',
                     margin: 0,
-                    maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
+                    height: `${currentWordPanel.bodyMaxHeight}px`,
+                    width: `${meaningWrapWidth}px`,
                     fontSize: currentWordPanel.bodyFontSize,
                     lineHeight: 1.9,
                     letterSpacing: '0.06em',
                     color: emotionUiTheme.textSecondary,
-                    overflow: 'hidden',
+                    overflow: 'visible',
+                    flex: '0 0 auto',
+                    boxSizing: 'content-box',
                   }}
                 >
-                  {infoPanelPlot.meaning?.trim() ||
-                    'この単語の意味データはまだ登録されていません。'}
+                  {meaningText}
                 </p>
                 {infoPanelPlot.usageExample?.trim() && (
                   <p
@@ -963,12 +1023,14 @@ function App() {
                       writingMode: 'vertical-rl',
                       textOrientation: 'mixed',
                       margin: 0,
-                      maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
-                      fontSize: currentWordPanel.dlFontSize,
+                      height: `${currentWordPanel.bodyMaxHeight}px`,
+                      fontSize: currentWordPanel.usageFontSize,
                       lineHeight: 1.8,
                       letterSpacing: '0.06em',
                       color: emotionUiTheme.textMuted,
-                      overflow: 'hidden',
+                      overflow: 'visible',
+                      flex: '0 0 auto',
+                      whiteSpace: 'nowrap',
                     }}
                   >
                     {`用例：${infoPanelPlot.usageExample.trim()}`}
@@ -988,6 +1050,7 @@ function App() {
                   margin: 0,
                   padding: '2px 0',
                   fontSize: currentWordPanel.dlFontSize,
+                  flex: '0 0 auto',
                 }}
               >
                 <dt style={{ color: emotionUiTheme.textMuted }}>主感情</dt>
