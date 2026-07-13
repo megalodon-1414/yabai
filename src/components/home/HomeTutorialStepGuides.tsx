@@ -5,8 +5,9 @@ import * as THREE from 'three';
 import { HOME_TUTORIAL_SPHERE_RADIUS } from './homeTutorialConstants';
 
 const ORBIT_RADIUS = HOME_TUTORIAL_SPHERE_RADIUS * 2.55;
-const ORBIT_SPEED = 1.05;
-const LABEL_FONT_SIZE = 0.052;
+const ORBIT_SPEED = 0.85;
+const LABEL_FONT_SIZE = 0.076;
+const RING_LINE_WIDTH = 0.0022;
 
 interface OrbitingStepLabelProps {
   center: [number, number, number];
@@ -21,38 +22,59 @@ export function OrbitingStepLabel({
   color,
   phaseOffset = 0,
 }: OrbitingStepLabelProps) {
-  const groupRef = useRef<THREE.Group>(null);
+  const ringPlaneRef = useRef<THREE.Group>(null);
+  const labelRef = useRef<THREE.Group>(null);
   const { camera } = useThree();
+  const ringColor = useMemo(() => new THREE.Color(color), [color]);
 
   useFrame((state) => {
-    const group = groupRef.current;
-    if (!group) {
+    const ringPlane = ringPlaneRef.current;
+    const labelGroup = labelRef.current;
+    if (!ringPlane || !labelGroup) {
       return;
     }
 
+    ringPlane.lookAt(camera.position);
+
     const angle = state.clock.elapsedTime * ORBIT_SPEED + phaseOffset;
-    group.position.set(
-      center[0] + Math.cos(angle) * ORBIT_RADIUS,
-      center[1] + Math.sin(angle * 0.55) * ORBIT_RADIUS * 0.22,
-      center[2] + Math.sin(angle) * ORBIT_RADIUS,
+    labelGroup.position.set(
+      Math.cos(angle) * ORBIT_RADIUS,
+      Math.sin(angle) * ORBIT_RADIUS,
+      0,
     );
-    group.lookAt(camera.position);
+    // 文字の下側が中心を向く（円の内側へ）
+    labelGroup.rotation.z = angle - Math.PI / 2;
   });
 
   return (
-    <group ref={groupRef} raycast={() => null}>
-      <Text
-        fontSize={LABEL_FONT_SIZE}
-        color={color}
-        anchorX="center"
-        anchorY="middle"
-        letterSpacing={0.08}
-        outlineWidth={0.004}
-        outlineColor="#050508"
-        fillOpacity={0.92}
-      >
-        {label}
-      </Text>
+    <group position={center} raycast={() => null}>
+      <group ref={ringPlaneRef}>
+        <mesh renderOrder={1}>
+          <ringGeometry args={[ORBIT_RADIUS - RING_LINE_WIDTH, ORBIT_RADIUS + RING_LINE_WIDTH, 96]} />
+          <meshBasicMaterial
+            color={ringColor}
+            transparent
+            opacity={0.22}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+        <group ref={labelRef}>
+          <Text
+            fontSize={LABEL_FONT_SIZE}
+            color={color}
+            anchorX="center"
+            anchorY="middle"
+            letterSpacing={0.06}
+            outlineWidth={0.005}
+            outlineColor="#050508"
+            fillOpacity={0.92}
+          >
+            {label}
+          </Text>
+        </group>
+      </group>
     </group>
   );
 }
@@ -65,7 +87,7 @@ interface StepGuideParticlesProps {
 }
 
 const PARTICLE_COUNT = 16;
-const PARTICLE_SPEED = 0.42;
+const PARTICLE_SPEED = 0.24;
 const PARTICLE_SIZE = 0.011;
 
 export function StepGuideParticles({

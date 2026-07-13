@@ -14,9 +14,10 @@ export function SiteLayout({ showSiteChrome = true }: SiteLayoutProps) {
   return (
     <div
       style={{
-        minHeight: '100%',
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
+        overflow: 'hidden',
         backgroundColor: '#0b0c10',
         color: '#f4ecf7',
       }}
@@ -48,10 +49,15 @@ export function SiteLayout({ showSiteChrome = true }: SiteLayoutProps) {
           <Link to={ROUTES.emotionMap} style={{ color: '#c39bd3', textDecoration: 'none' }}>
             感情MAP
           </Link>
+          {import.meta.env.DEV && (
+            <Link to={ROUTES.devWords} style={{ color: '#45f3ff', textDecoration: 'none' }}>
+              DEV: 単語編集
+            </Link>
+          )}
         </nav>
       </header>
 
-      <main style={{ flex: 1, minHeight: 0 }}>
+      <main style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <Outlet />
       </main>
 

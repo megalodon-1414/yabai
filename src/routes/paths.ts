@@ -2,6 +2,7 @@
 export const ROUTES = {
   home: '/',
   emotionMap: '/map',
+  devWords: '/dev/words',
 } as const;
 
 export type AppRoutePath = (typeof ROUTES)[keyof typeof ROUTES];

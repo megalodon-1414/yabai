@@ -4,9 +4,13 @@ import * as THREE from 'three';
 import { applySelectionViewOffset, clearSelectionViewOffset } from '../../utils/cameraFocus';
 import { getHomeTutorialCameraPose } from './homeTutorialCamera';
 import {
+  HOME_TUTORIAL_ACTIVE_HOVER_SCALE_BOOST,
+  HOME_TUTORIAL_ACTIVE_SPHERE_SCALE,
+  HOME_TUTORIAL_HOVER_SPHERE_SCALE,
   HOME_TUTORIAL_SPHERE_RADIUS,
   HOME_TUTORIAL_STEPS,
 } from './homeTutorialConstants';
+import { HomeTutorialPlutchikWheel3D } from './HomeTutorialPlutchikWheel3D';
 import { HomeTutorialVoidCloud } from './HomeTutorialVoidCloud';
 import { OrbitingStepLabel, StepGuideParticles } from './HomeTutorialStepGuides';
 
@@ -110,6 +114,8 @@ function TutorialStepSphere({
   onStepSelect?: (index: number) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const isHovered = useRef(false);
+  const hoverBlend = useRef(0);
   const { camera, size } = useThree();
   const projected = useRef(new THREE.Vector3());
   const lastPoint = useRef<{ x: number; y: number; visible: boolean } | null>(null);
@@ -117,15 +123,27 @@ function TutorialStepSphere({
   const step = HOME_TUTORIAL_STEPS[stepIndex];
   const isActive = stepIndex === activeStepIndex;
   const isClickable = !isActive;
+  const inactiveScale = 0.9;
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const mesh = meshRef.current;
     if (!mesh) {
       return;
     }
 
+    const hoverTarget = isHovered.current ? 1 : 0;
+    hoverBlend.current = THREE.MathUtils.lerp(
+      hoverBlend.current,
+      hoverTarget,
+      1 - Math.exp(-10 * delta),
+    );
+
     const pulse = (Math.sin(state.clock.elapsedTime * (isActive ? 1.25 : 0.9)) + 1) / 2;
-    const baseScale = isActive ? 1 : 0.86;
+    const restedScale = isActive ? HOME_TUTORIAL_ACTIVE_SPHERE_SCALE : inactiveScale;
+    const hoveredScale = isActive
+      ? HOME_TUTORIAL_ACTIVE_SPHERE_SCALE * HOME_TUTORIAL_ACTIVE_HOVER_SCALE_BOOST
+      : HOME_TUTORIAL_HOVER_SPHERE_SCALE;
+    const baseScale = THREE.MathUtils.lerp(restedScale, hoveredScale, hoverBlend.current);
     mesh.scale.setScalar(baseScale + pulse * (isActive ? 0.1 : 0.05));
 
     if (!isActive || !onScreenPosition) {
@@ -165,13 +183,14 @@ function TutorialStepSphere({
         onStepSelect(stepIndex);
       }}
       onPointerOver={(event) => {
-        if (!isClickable) {
-          return;
-        }
         event.stopPropagation();
-        document.body.style.cursor = 'pointer';
+        isHovered.current = true;
+        if (isClickable) {
+          document.body.style.cursor = 'pointer';
+        }
       }}
       onPointerOut={() => {
+        isHovered.current = false;
         document.body.style.cursor = 'auto';
       }}
     >
@@ -197,6 +216,8 @@ export function HomeTutorialCanvas({
 }: HomeTutorialCanvasProps) {
   const initialPose = getHomeTutorialCameraPose(HOME_TUTORIAL_STEPS[0]);
   const activeStep = HOME_TUTORIAL_STEPS[activeStepIndex] ?? HOME_TUTORIAL_STEPS[0];
+  const mainStep = HOME_TUTORIAL_STEPS[0];
+  const showPlutchikWheel = activeStepIndex === 0;
   const nextStep = HOME_TUTORIAL_STEPS[activeStepIndex + 1];
   const previousStep = HOME_TUTORIAL_STEPS[activeStepIndex - 1];
 
@@ -211,6 +232,10 @@ export function HomeTutorialCanvas({
       <pointLight position={[2, 3, 4]} intensity={0.9} />
       <HomeTutorialCamera activeStepIndex={activeStepIndex} />
       <HomeTutorialVoidCloud />
+      <HomeTutorialPlutchikWheel3D
+        center={mainStep.worldPosition}
+        visible={showPlutchikWheel}
+      />
       {nextStep && (
         <>
           <OrbitingStepLabel

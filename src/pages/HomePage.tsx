@@ -1,26 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { MainLandingLogo } from '../components/landing/MainLandingLogo';
 import { HomeTutorialCanvas } from '../components/home/HomeTutorialCanvas';
 import { HomeTutorialIntroPanel } from '../components/home/HomeTutorialIntroPanel';
-import { HOME_TUTORIAL_STEPS } from '../components/home/homeTutorialConstants';
+import {
+  HOME_TUTORIAL_CAMERA_TRANSITION_MS,
+  HOME_TUTORIAL_PANEL_FADE_MS,
+  HOME_TUTORIAL_STEPS,
+} from '../components/home/homeTutorialConstants';
 import { ROUTES } from '../routes/paths';
 import { DEFAULT_EMOTION_UI_ACCENT, getEmotionUiTheme } from '../utils/emotionUiTheme';
 import { getHomeTutorialUiLayout } from '../utils/homeTutorialUiLayout';
 
 const UI_COLOR_TRANSITION =
   'border-color 320ms ease, background-color 320ms ease, color 320ms ease';
-const STEP_TRANSITION_MS = 1050;
 
 export function HomePage() {
   const mainRef = useRef<HTMLElement>(null);
   const [mainSize, setMainSize] = useState({ width: 0, height: 0 });
   const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [panelStepIndex, setPanelStepIndex] = useState(0);
   const [sphereScreenPoint, setSphereScreenPoint] = useState<{
     x: number;
     y: number;
     visible: boolean;
   } | null>(null);
   const [isPanelVisible, setIsPanelVisible] = useState(false);
+  const [isLandingChromeVisible, setIsLandingChromeVisible] = useState(true);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const transitionTimersRef = useRef<number[]>([]);
 
   const uiTheme = useMemo(() => getEmotionUiTheme(DEFAULT_EMOTION_UI_ACCENT, 'dark'), []);
   const infoUi = useMemo(
@@ -29,6 +37,14 @@ export function HomePage() {
   );
   const { currentWordPanel } = infoUi;
   const activeStep = HOME_TUTORIAL_STEPS[activeStepIndex] ?? HOME_TUTORIAL_STEPS[0];
+  const panelStep = HOME_TUTORIAL_STEPS[panelStepIndex] ?? HOME_TUTORIAL_STEPS[0];
+  const panelContent = panelStep.content;
+  const showIntroPanel = Boolean(panelContent && activeStep.showIntroPanel !== false);
+
+  const clearTransitionTimers = useCallback(() => {
+    transitionTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    transitionTimersRef.current = [];
+  }, []);
 
   useEffect(() => {
     const element = mainRef.current;
@@ -46,24 +62,62 @@ export function HomePage() {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => setIsPanelVisible(true), 280);
-    return () => window.clearTimeout(timeoutId);
-  }, []);
+  useEffect(() => () => clearTransitionTimers(), [clearTransitionTimers]);
 
   const handleStepSelect = useCallback((nextIndex: number) => {
-    if (nextIndex === activeStepIndex || nextIndex < 0 || nextIndex >= HOME_TUTORIAL_STEPS.length) {
+    if (
+      isTransitioning ||
+      nextIndex === activeStepIndex ||
+      nextIndex < 0 ||
+      nextIndex >= HOME_TUTORIAL_STEPS.length
+    ) {
       return;
     }
 
-    setIsPanelVisible(false);
-    setActiveStepIndex(nextIndex);
-    setSphereScreenPoint(null);
-    window.setTimeout(() => setIsPanelVisible(true), STEP_TRANSITION_MS);
-  }, [activeStepIndex]);
+    const currentStep = HOME_TUTORIAL_STEPS[activeStepIndex];
+    const nextStep = HOME_TUTORIAL_STEPS[nextIndex];
+    const leavingMain = currentStep.showLandingChrome === true;
+    const enteringMain = nextStep.showLandingChrome === true;
+    const enteringPanel = nextStep.showIntroPanel === true && nextStep.content;
+
+    clearTransitionTimers();
+    setIsTransitioning(true);
+
+    if (enteringPanel) {
+      setIsPanelVisible(false);
+    } else if (!enteringMain) {
+      setIsPanelVisible(false);
+    }
+
+    if (leavingMain) {
+      setIsLandingChromeVisible(false);
+    }
+
+    const fadeDelay = enteringPanel || leavingMain || enteringMain ? HOME_TUTORIAL_PANEL_FADE_MS : 0;
+
+    const startCameraMoveTimer = window.setTimeout(() => {
+      setActiveStepIndex(nextIndex);
+      setSphereScreenPoint(null);
+    }, fadeDelay);
+
+    const finishTimer = window.setTimeout(() => {
+      if (enteringMain) {
+        setIsLandingChromeVisible(true);
+        setIsPanelVisible(false);
+      } else if (enteringPanel && nextStep.content) {
+        setPanelStepIndex(nextIndex);
+        setIsPanelVisible(true);
+      }
+      setIsTransitioning(false);
+    }, fadeDelay + HOME_TUTORIAL_CAMERA_TRANSITION_MS);
+
+    transitionTimersRef.current = [startCameraMoveTimer, finishTimer];
+  }, [activeStepIndex, clearTransitionTimers, isTransitioning]);
 
   const showGuideLine =
+    showIntroPanel &&
     isPanelVisible &&
+    !isTransitioning &&
     sphereScreenPoint?.visible &&
     mainSize.width > 0 &&
     mainSize.height > 0;
@@ -101,6 +155,23 @@ export function HomePage() {
           onStepSelect={handleStepSelect}
         />
 
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            paddingRight: 'clamp(6%, 10vw, 14%)',
+            pointerEvents: 'none',
+            zIndex: 1,
+            opacity: isLandingChromeVisible ? 1 : 0,
+            transition: `opacity ${HOME_TUTORIAL_PANEL_FADE_MS}ms ease`,
+          }}
+        >
+          <MainLandingLogo />
+        </div>
+
         {showGuideLine && sphereScreenPoint && (
           <svg
             width="100%"
@@ -110,7 +181,7 @@ export function HomePage() {
             style={{
               position: 'absolute',
               inset: 0,
-              zIndex: 1,
+              zIndex: 2,
               pointerEvents: 'none',
               overflow: 'visible',
             }}
@@ -127,12 +198,14 @@ export function HomePage() {
           </svg>
         )}
 
-        <HomeTutorialIntroPanel
-          uiTheme={uiTheme}
-          panel={currentWordPanel}
-          content={activeStep.content}
-          visible={isPanelVisible}
-        />
+        {panelContent && (
+          <HomeTutorialIntroPanel
+            uiTheme={uiTheme}
+            panel={currentWordPanel}
+            content={panelContent}
+            visible={showIntroPanel && isPanelVisible}
+          />
+        )}
 
         <Link
           to={ROUTES.emotionMap}
@@ -140,7 +213,7 @@ export function HomePage() {
             position: 'absolute',
             right: '16px',
             bottom: '16px',
-            zIndex: 2,
+            zIndex: 3,
             padding: `${Math.round(8 * infoUi.scale)}px ${Math.round(14 * infoUi.scale)}px`,
             border: `1px solid ${uiTheme.controlBorder}`,
             borderRadius: `${Math.round(8 * infoUi.scale)}px`,
