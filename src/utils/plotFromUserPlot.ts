@@ -2,6 +2,7 @@ import type { UserPlotRow } from '../types/userPlot';
 import { emotionPlotColor, rowToEmotionParams } from './emotionPlotBridge';
 import { getEmotionPlotPosition, type PlotOrbitOverride } from './emotionPlotPosition';
 import { getEmotionCenter, getEmotionSphereRadius } from './emotionSpaceLayout';
+import { findPlotByKey, getPlotKey } from './plotIdentity';
 
 export type { PlotOrbitOverride } from './emotionPlotPosition';
 
@@ -186,19 +187,20 @@ export function getNearbyPlotIds(
     maxMovable?: number;
   },
 ): Set<string> {
-  const selected = plots.find((plot) => plot.word_id === selectedId);
+  const selected = findPlotByKey(plots, selectedId);
   if (!selected) {
-    return new Set([selectedId]);
+    return new Set(selectedId ? [selectedId] : []);
   }
 
+  const selectedKey = getPlotKey(selected);
   const [selectedX, selectedY, selectedZ] = plotPositionFromRow(
     selected,
     0,
     orbitOverrides?.get(selected.word_id),
   );
 
-  const unitKeyFor = (plotId: string): string =>
-    orbitOverrides?.get(plotId)?.groupKey ?? `solo:${plotId}`;
+  const unitKeyFor = (plot: UserPlotRow): string =>
+    orbitOverrides?.get(plot.word_id)?.groupKey ?? `solo:${getPlotKey(plot)}`;
 
   const membersOfUnit = (unitKey: string): string[] => {
     if (unitKey.startsWith('solo:')) {
@@ -206,13 +208,13 @@ export function getNearbyPlotIds(
     }
     return plots
       .filter((plot) => orbitOverrides?.get(plot.word_id)?.groupKey === unitKey)
-      .map((plot) => plot.word_id);
+      .map((plot) => getPlotKey(plot));
   };
 
-  const nearby = new Set<string>([selectedId]);
+  const nearby = new Set<string>([selectedKey]);
 
   // 選択中と同じ回転グループは常に描画（現在ユニットとして枠外）
-  const selectedUnitKey = unitKeyFor(selectedId);
+  const selectedUnitKey = unitKeyFor(selected);
   for (const memberId of membersOfUnit(selectedUnitKey)) {
     nearby.add(memberId);
   }
@@ -221,7 +223,8 @@ export function getNearbyPlotIds(
   const units = new Map<string, UnitRank>();
 
   for (const plot of plots) {
-    if (nearby.has(plot.word_id)) {
+    const plotKey = getPlotKey(plot);
+    if (nearby.has(plotKey)) {
       continue;
     }
     // 単語間の移動は同一星系内のみ（星系間はワープゲート経由）
@@ -239,7 +242,7 @@ export function getNearbyPlotIds(
       continue;
     }
 
-    const key = unitKeyFor(plot.word_id);
+    const key = unitKeyFor(plot);
     const existing = units.get(key);
     if (!existing || distance < existing.distance) {
       units.set(key, { key, distance });
@@ -277,7 +280,7 @@ export function getNearbyPlotIds(
 
       const [x, y, z] = plotPositionFromRow(plot, 0, orbitOverrides?.get(plot.word_id));
       const distance = Math.hypot(x - selectedX, y - selectedY, z - selectedZ);
-      const key = unitKeyFor(plot.word_id);
+      const key = unitKeyFor(plot);
       const secondaryKey = params.secondaryId;
       const existing = nearestBySecondary.get(secondaryKey);
       if (!existing || distance < existing.distance) {

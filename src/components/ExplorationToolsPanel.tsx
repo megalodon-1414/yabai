@@ -3,6 +3,7 @@ import type { EmotionId } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import type { EmotionUiTheme } from '../utils/emotionUiTheme';
 import { canMoveWithinEmotionSystem } from '../utils/plotFromUserPlot';
+import { getPlotKey } from '../utils/plotIdentity';
 import {
   PLOT_TAGS,
   searchPlotsByQuery,
@@ -365,9 +366,9 @@ export function ExplorationToolsPanel({
                 )}
                 {suggestions.map((plot) => (
                   <button
-                    key={plot.word_id}
+                    key={getPlotKey(plot)}
                     type="button"
-                    onClick={() => onSelectWord(plot.word_id)}
+                    onClick={() => onSelectWord(getPlotKey(plot))}
                     style={{
                       display: 'block',
                       width: '100%',

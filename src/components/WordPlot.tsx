@@ -12,6 +12,7 @@ import {
   plotPositionFromRow,
   type PlotOrbitOverride,
 } from '../utils/plotFromUserPlot';
+import { getPlotKey } from '../utils/plotIdentity';
 import { SELECTED_PLOT_SCALE } from '../utils/plotSelectionStyle';
 import { getPlotLabelStyle, getPlotLabelTypography, FLOW_LABEL_DURATION_MS, getFlowLabelFadeFactor, type PlotLabelDisplayMode } from '../utils/plotLabelStyle';
 import { OrbitTrail } from './OrbitTrail';
@@ -246,7 +247,7 @@ export function WordPlot({
     }
 
     event.stopPropagation();
-    onSelect(plot.word_id);
+    onSelect(getPlotKey(plot));
   };
 
   return (
@@ -295,7 +296,7 @@ export function WordPlot({
 
             event.stopPropagation();
             document.body.style.cursor = 'pointer';
-            onHoverChange?.(plot.word_id);
+            onHoverChange?.(getPlotKey(plot));
           }}
           onPointerOut={() => {
             document.body.style.cursor = 'auto';
