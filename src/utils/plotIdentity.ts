@@ -1,4 +1,3 @@
-import type { EmotionId } from '../data/emotions';
 import { ALL_EMOTIONS } from '../data/emotions';
 import type { UserPlotRow } from '../types/userPlot';
 import { normalizeUserPlotRow } from './emotionPlotBridge';
