@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { HomeTutorialStepDefinition } from './homeTutorialConstants';
+import type { HomeTutorialStepDefinition } from './constants';
 
 const DEFAULT_CAMERA_DISTANCE = 5;
 

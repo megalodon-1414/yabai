@@ -2,22 +2,22 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { applySelectionViewOffset, clearSelectionViewOffset } from '../../utils/cameraFocus';
-import { getHomeTutorialCameraPose } from './homeTutorialCamera';
+import { getHomeTutorialCameraPose } from './camera';
 import {
   HOME_TUTORIAL_ACTIVE_HOVER_SCALE_BOOST,
   HOME_TUTORIAL_ACTIVE_SPHERE_SCALE,
   HOME_TUTORIAL_HOVER_SPHERE_SCALE,
   HOME_TUTORIAL_SPHERE_RADIUS,
   HOME_TUTORIAL_STEPS,
-} from './homeTutorialConstants';
+} from './constants';
 import { HomeTutorialPlutchikWheel3D } from './HomeTutorialPlutchikWheel3D';
 import { HomeTutorialVoidCloud } from './HomeTutorialVoidCloud';
 import { OrbitingStepLabel, StepGuideParticles } from './HomeTutorialStepGuides';
 
 const CAMERA_FOV = 55;
-const CAMERA_POS_LERP_SPEED = 2.1;
-const LOOK_AT_LERP_SPEED = 2.4;
-const ANCHOR_LERP_SPEED = 4.5;
+const CAMERA_POS_LERP_SPEED = 3.4;
+const LOOK_AT_LERP_SPEED = 3.6;
+const ANCHOR_LERP_SPEED = 5.5;
 
 interface HomeTutorialCanvasProps {
   activeStepIndex: number;

@@ -2,7 +2,7 @@ import { Text } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { HOME_TUTORIAL_SPHERE_RADIUS } from './homeTutorialConstants';
+import { HOME_TUTORIAL_SPHERE_RADIUS } from './constants';
 
 const ORBIT_RADIUS = HOME_TUTORIAL_SPHERE_RADIUS * 2.55;
 const ORBIT_SPEED = 0.85;

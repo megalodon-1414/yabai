@@ -3,7 +3,7 @@
 周辺ページ（ホーム・解説など）はこの `pages/` 以下に追加してください。  
 感情MAP本体は **`EmotionMapPage.tsx` のみ** — `components/` や MAP 用 `utils/` への変更は共同開発の衝突を避けるため最小限に。
 
-ホームの 3D チュートリアルは **`components/home/`** に置く（感情MAPと分離）。
+ホームの 3D チュートリアルは **`features/home-tutorial/`** にまとめる（感情MAPと分離）。
 
 ## ルート
 

@@ -1,4 +1,4 @@
-import { SITE_NAME } from '../home/homeTutorialConstants';
+import { SITE_NAME } from '../../constants/site';
 
 interface MainLandingLogoProps {
   /** 差し替え用 SVG を置く領域の幅 */

@@ -1,23 +1,62 @@
+import { useEffect, useMemo, useState } from 'react';
+import type { BasicEmotionId } from '../../data/emotions';
+import { BASIC_EMOTIONS } from '../../data/emotions';
 import type { EmotionUiTheme } from '../../utils/emotionUiTheme';
-import type { ExplorationInfoUiLayout } from '../../utils/explorationInfoUiLayout';
-import type { HomeTutorialStepContent } from './homeTutorialConstants';
+import { buildPlutchikPetalPath } from '../../utils/plutchikPetalPath';
+import type { HomeTutorialStepContent } from './constants';
+import type { HomeTutorialVerticalPanel } from './panelLayout';
 
 const UI_COLOR_TRANSITION =
   'border-color 320ms ease, background-color 320ms ease, color 320ms ease, box-shadow 320ms ease';
 
-interface HomeTutorialIntroPanelProps {
+const VIEW_SIZE = 200;
+const CENTER = VIEW_SIZE / 2;
+const OUTER_RADIUS = 80;
+const SECTOR_HALF_SPREAD = 22.5;
+const ANGLE_OFFSET = -90;
+
+interface HomeTutorialEmotionWheelPanelProps {
   uiTheme: EmotionUiTheme;
-  panel: ExplorationInfoUiLayout['currentWordPanel'];
+  panel: HomeTutorialVerticalPanel;
   content: HomeTutorialStepContent;
   visible: boolean;
 }
 
-export function HomeTutorialIntroPanel({
+export function HomeTutorialEmotionWheelPanel({
   uiTheme,
   panel,
   content,
   visible,
-}: HomeTutorialIntroPanelProps) {
+}: HomeTutorialEmotionWheelPanelProps) {
+  const [selectedId, setSelectedId] = useState<BasicEmotionId | null>(null);
+  const wheelSize = panel.wheelSize ?? 168;
+  const wheelEmotionFontSize = panel.wheelEmotionFontSize ?? panel.bodyFontSize;
+
+  useEffect(() => {
+    if (!visible) {
+      setSelectedId(null);
+    }
+  }, [visible]);
+
+  const petals = useMemo(
+    () =>
+      BASIC_EMOTIONS.map((emotion) => ({
+        id: emotion.id,
+        label: emotion.label,
+        color: emotion.color,
+        d: buildPlutchikPetalPath(
+          CENTER,
+          CENTER,
+          emotion.angle + ANGLE_OFFSET,
+          OUTER_RADIUS,
+          SECTOR_HALF_SPREAD,
+        ),
+      })),
+    [],
+  );
+
+  const selectedEmotion = petals.find((petal) => petal.id === selectedId) ?? null;
+
   return (
     <aside
       style={{
@@ -35,9 +74,10 @@ export function HomeTutorialIntroPanel({
         boxShadow: uiTheme.panelShadow,
         backdropFilter: 'blur(12px)',
         color: uiTheme.textPrimary,
-        pointerEvents: 'none',
+        pointerEvents: visible ? 'auto' : 'none',
         opacity: visible ? 1 : 0,
-        transition: `opacity 420ms ease, ${UI_COLOR_TRANSITION}`,
+        transition: `opacity 320ms ease, ${UI_COLOR_TRANSITION}`,
+        boxSizing: 'border-box',
       }}
     >
       <div
@@ -99,7 +139,6 @@ export function HomeTutorialIntroPanel({
               alignItems: 'center',
               gap: `${panel.innerGap}px`,
               width: `${panel.wordColumnWidth}px`,
-              overflow: 'hidden',
             }}
           >
             <div
@@ -160,6 +199,19 @@ export function HomeTutorialIntroPanel({
             writingMode: 'vertical-rl',
             textOrientation: 'mixed',
             margin: 0,
+            fontSize: panel.metaFontSize,
+            letterSpacing: '0.12em',
+            color: uiTheme.textMuted,
+          }}
+        >
+          {content.note}
+        </p>
+
+        <p
+          style={{
+            writingMode: 'vertical-rl',
+            textOrientation: 'mixed',
+            margin: 0,
             maxHeight: `${panel.bodyMaxHeight}px`,
             fontSize: panel.bodyFontSize,
             lineHeight: 1.9,
@@ -170,18 +222,63 @@ export function HomeTutorialIntroPanel({
           {content.body}
         </p>
 
-        <p
+        <div
           style={{
-            writingMode: 'vertical-rl',
-            textOrientation: 'mixed',
-            margin: 0,
-            fontSize: panel.metaFontSize,
-            letterSpacing: '0.12em',
-            color: uiTheme.textMuted,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            width: `${wheelSize}px`,
+            gap: `${panel.innerGap}px`,
           }}
         >
-          {content.note}
-        </p>
+          <svg
+            width={wheelSize}
+            height={wheelSize}
+            viewBox={`0 0 ${VIEW_SIZE} ${VIEW_SIZE}`}
+            role="img"
+            aria-label="プルチックの8基本感情"
+            style={{ display: 'block' }}
+          >
+            {petals.map((petal) => {
+              const isSelected = selectedId === petal.id;
+              return (
+                <path
+                  key={petal.id}
+                  d={petal.d}
+                  fill={petal.color}
+                  fillOpacity={isSelected ? 1 : 0.82}
+                  stroke={isSelected ? '#fff' : 'rgba(255,255,255,0.15)'}
+                  strokeWidth={isSelected ? 2.2 : 0.8}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setSelectedId(petal.id)}
+                />
+              );
+            })}
+            <circle
+              cx={CENTER}
+              cy={CENTER}
+              r={9}
+              fill="rgba(255,255,255,0.08)"
+              stroke="rgba(255,255,255,0.12)"
+            />
+          </svg>
+          <p
+            style={{
+              margin: 0,
+              width: '100%',
+              textAlign: 'center',
+              fontSize: wheelEmotionFontSize,
+              fontWeight: selectedEmotion ? 700 : 500,
+              letterSpacing: '0.08em',
+              lineHeight: 1.3,
+              color: selectedEmotion ? selectedEmotion.color : uiTheme.textMuted,
+            }}
+          >
+            {selectedEmotion ? selectedEmotion.label : '環を選ぶ'}
+          </p>
+        </div>
       </div>
     </aside>
   );

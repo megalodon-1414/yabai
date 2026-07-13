@@ -11,12 +11,11 @@ import {
 const OUTER_RADIUS = 0.7;
 const HALF_SPREAD_DEG = 22.5;
 const WHEEL_SCALE = 1.3;
-/** 環全体を手前に傾ける */
-const RING_TILT_X = 0.1;
-const RING_YAW = 0.1;
-/** トーラス状の立体環 — 花弁の付け根を少し持ち上げる */
-const TORUS_WAVE = 0.07;
-const HUB_OFFSET = 0.025;
+/** 平面の傾き — 右下が手前に来る */
+const PLANE_TILT_X = -0.52;
+const PLANE_TILT_Y = -0.38;
+/** 中心点（ハブ）を軸にした回転速度 [rad/s] */
+const SPIN_SPEED = 0.12;
 
 interface HomeTutorialPlutchikWheel3DProps {
   center: [number, number, number];
@@ -29,6 +28,7 @@ function getPetalPlaneAngle(emotionAngle: number): number {
 
 export function HomeTutorialPlutchikWheel3D({ center, visible }: HomeTutorialPlutchikWheel3DProps) {
   const ringRef = useRef<THREE.Group>(null);
+  const spinRef = useRef<THREE.Group>(null);
   const opacityTarget = useRef(visible ? 1 : 0);
   const opacityCurrent = useRef(visible ? 1 : 0);
 
@@ -46,17 +46,7 @@ export function HomeTutorialPlutchikWheel3D({ center, visible }: HomeTutorialPlu
         return {
           id: emotion.id,
           color: emotion.color,
-          planeAngle,
-          position: [
-            Math.cos(planeAngle) * HUB_OFFSET,
-            Math.sin(planeAngle) * HUB_OFFSET,
-            Math.sin(planeAngle * 2) * TORUS_WAVE,
-          ] as [number, number, number],
-          rotation: [
-            Math.sin(planeAngle) * 0.22,
-            0,
-            planeAngle - Math.PI / 2,
-          ] as [number, number, number],
+          rotation: [0, 0, planeAngle - Math.PI / 2] as [number, number, number],
         };
       }),
     [],
@@ -75,6 +65,10 @@ export function HomeTutorialPlutchikWheel3D({ center, visible }: HomeTutorialPlu
       return;
     }
 
+    if (spinRef.current && opacityCurrent.current > 0.02) {
+      spinRef.current.rotation.z += delta * SPIN_SPEED;
+    }
+
     ring.visible = opacityCurrent.current > 0.02;
     ring.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) {
@@ -89,29 +83,27 @@ export function HomeTutorialPlutchikWheel3D({ center, visible }: HomeTutorialPlu
 
   return (
     <group ref={ringRef} position={center} scale={WHEEL_SCALE}>
-      <group rotation={[RING_TILT_X, RING_YAW, 0]}>
-        {petals.map((petal) => (
-          <group
-            key={petal.id}
-            position={petal.position}
-            rotation={petal.rotation}
-          >
-            <mesh geometry={petalGeometry} position={[0, 0, -petalDepth / 2]}>
-              <meshStandardMaterial
-                color={petal.color}
-                emissive={petal.color}
-                emissiveIntensity={0.28}
-                roughness={0.45}
-                metalness={0}
-                toneMapped={false}
-                transparent
-                opacity={0.92}
-                side={THREE.DoubleSide}
-                depthWrite={false}
-              />
-            </mesh>
-          </group>
-        ))}
+      <group rotation={[PLANE_TILT_X, PLANE_TILT_Y, 0]}>
+        <group ref={spinRef}>
+          {petals.map((petal) => (
+            <group key={petal.id} rotation={petal.rotation}>
+              <mesh geometry={petalGeometry} position={[0, 0, -petalDepth / 2]}>
+                <meshStandardMaterial
+                  color={petal.color}
+                  emissive={petal.color}
+                  emissiveIntensity={0.28}
+                  roughness={0.45}
+                  metalness={0}
+                  toneMapped={false}
+                  transparent
+                  opacity={0.92}
+                  side={THREE.DoubleSide}
+                  depthWrite={false}
+                />
+              </mesh>
+            </group>
+          ))}
+        </group>
       </group>
     </group>
   );
