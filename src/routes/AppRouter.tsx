@@ -13,11 +13,9 @@ export function AppRouter() {
           <Route path={ROUTES.home} element={<HomePage />} />
           <Route path={ROUTES.emotionMap} element={<EmotionMapPage />} />
         </Route>
-        {import.meta.env.DEV && (
-          <Route element={<SiteLayout showSiteChrome />}>
-            <Route path={ROUTES.devWords} element={<DevWordsEditorPage />} />
-          </Route>
-        )}
+        <Route element={<SiteLayout showSiteChrome />}>
+          <Route path={ROUTES.devWords} element={<DevWordsEditorPage />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );

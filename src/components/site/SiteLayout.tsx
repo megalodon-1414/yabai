@@ -49,11 +49,9 @@ export function SiteLayout({ showSiteChrome = true }: SiteLayoutProps) {
           <Link to={ROUTES.emotionMap} style={{ color: '#c39bd3', textDecoration: 'none' }}>
             感情MAP
           </Link>
-          {import.meta.env.DEV && (
-            <Link to={ROUTES.devWords} style={{ color: '#45f3ff', textDecoration: 'none' }}>
-              DEV: 単語編集
-            </Link>
-          )}
+          <Link to={ROUTES.devWords} style={{ color: '#45f3ff', textDecoration: 'none' }}>
+            単語編集
+          </Link>
         </nav>
       </header>
 
