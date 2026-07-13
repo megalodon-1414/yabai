@@ -44,7 +44,7 @@ function emotionWordToPlot(
       row.secondary_emotion_id != null
         ? emotionNameById.get(row.secondary_emotion_id)
         : undefined,
-    sourceId: row.id,
+    sourceId: Number(row.id),
   });
 }
 

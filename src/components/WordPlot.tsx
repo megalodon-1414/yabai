@@ -43,6 +43,8 @@ interface WordPlotProps {
   plotLabelDisplayMode?: PlotLabelDisplayMode;
   orbitOverride?: PlotOrbitOverride;
   orbitTimeScale?: number;
+  /** true のときクリック判定を無効化（ワープ進入ヒットと競合しないようにする） */
+  suppressPointerHit?: boolean;
   onHoverChange?: (wordId: string | null) => void;
   onSelect: (wordId: string) => void;
 }
@@ -57,6 +59,7 @@ export function WordPlot({
   plotLabelDisplayMode = 'flow',
   orbitOverride,
   orbitTimeScale = 1,
+  suppressPointerHit = false,
   onHoverChange,
   onSelect,
 }: WordPlotProps) {
@@ -81,13 +84,13 @@ export function WordPlot({
   const isOrbiting = isPureEmotionPlot(plot);
 
   const selectedScale = explorationMode && isSelected ? 1 : SELECTED_PLOT_SCALE;
-  const flowExpiresAt = flowLabelExpiresAt?.[plot.word_id];
+  const flowExpiresAt = flowLabelExpiresAt?.[getPlotKey(plot)];
   const isFlowLabelActive = flowExpiresAt !== undefined && flowExpiresAt > flowLabelNow;
   const showLabel = !explorationMode
     || (plotLabelDisplayMode === 'nearby' && isNearbyVisible && !isSelected)
     || (plotLabelDisplayMode === 'flow' && !isSelected && isFlowLabelActive);
   const isDistantExplorationPlot = explorationMode && !isNearbyVisible && !isSelected;
-  const isSelectable = !explorationMode || isNearbyVisible || isSelected;
+  const isSelectable = (!explorationMode || isNearbyVisible || isSelected) && !suppressPointerHit;
   const showSelectedRing = explorationMode && isSelected;
 
   const labelStyle = useMemo(

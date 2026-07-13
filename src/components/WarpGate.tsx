@@ -16,6 +16,9 @@ const ACTIVE_GATE_RING_COUNT = 8;
 const PASSIVE_GATE_RING_COUNT = 4;
 const ACTIVE_GATE_RADIAL_COUNT = 18;
 const PASSIVE_GATE_RADIAL_COUNT = 10;
+/** 選択語付近の進入ヒット（ゲート本体より手前で確実に掴める） */
+const APPROACH_HIT_RADIUS = 0.09;
+const APPROACH_HIT_OFFSET = 0.055;
 
 interface WarpGateProps {
   targetEmotionId: EmotionId;
@@ -25,6 +28,9 @@ interface WarpGateProps {
   sourceOverride?: [number, number, number];
   /** true のとき source をそのままゲート位置にし、中心方向へ向ける（星系端用） */
   anchorAtSource?: boolean;
+  /** 進入クリック用。遠方ゲートの手前で星に遮られないよう、選択語付近に置く */
+  approachHitPlot?: UserPlotRow | null;
+  approachHitOrbitOverride?: PlotOrbitOverride;
   color: string;
   hoverLabel: string;
   active?: boolean;
@@ -85,6 +91,8 @@ export function WarpGate({
   orbitOverride,
   sourceOverride,
   anchorAtSource = false,
+  approachHitPlot = null,
+  approachHitOrbitOverride,
   color,
   hoverLabel,
   active = false,
@@ -94,9 +102,12 @@ export function WarpGate({
 }: WarpGateProps) {
   const { camera, size } = useThree();
   const groupRef = useRef<THREE.Group>(null);
+  const approachHitRef = useRef<THREE.Mesh>(null);
   const isHovered = useRef(false);
   const sizeProgress = useRef(active ? 1 : 0);
   const source = useRef(new THREE.Vector3());
+  const approachPos = useRef(new THREE.Vector3());
+  const approachDir = useRef(new THREE.Vector3());
   const target = useMemo(() => {
     const center = getEmotionCenter(targetEmotionId);
     return new THREE.Vector3(center.x, center.y, center.z);
@@ -166,9 +177,55 @@ export function WarpGate({
         visible: projected.current.z >= -1 && projected.current.z <= 1,
       });
     }
+
+    const approachHit = approachHitRef.current;
+    if (approachHit && active && approachHitPlot) {
+      approachPos.current.set(
+        ...plotPositionFromRow(
+          approachHitPlot,
+          state.clock.elapsedTime,
+          approachHitOrbitOverride,
+        ),
+      );
+      approachDir.current.copy(gatePosition.current).sub(approachPos.current);
+      if (approachDir.current.lengthSq() > 1e-8) {
+        approachDir.current.normalize();
+        approachPos.current.addScaledVector(approachDir.current, APPROACH_HIT_OFFSET);
+      }
+      approachHit.position.copy(approachPos.current);
+      approachHit.visible = true;
+    } else if (approachHit) {
+      approachHit.visible = false;
+    }
   });
 
+  const bindWarpPointer = {
+    onClick: (event: { stopPropagation: () => void }) => {
+      if (!active) {
+        return;
+      }
+      event.stopPropagation();
+      onWarp?.();
+    },
+    onPointerOver: (event: { stopPropagation: () => void }) => {
+      if (!active) {
+        return;
+      }
+      event.stopPropagation();
+      document.body.style.cursor = 'pointer';
+      isHovered.current = true;
+      onHoverLabelChange?.(hoverLabel);
+    },
+    onPointerOut: () => {
+      document.body.style.cursor = 'auto';
+      isHovered.current = false;
+      onHoverLabelChange?.(null);
+      onHoverScreenPosition?.(null);
+    },
+  };
+
   return (
+    <>
     <group ref={groupRef}>
       <lineSegments>
         <bufferGeometry>
@@ -182,34 +239,9 @@ export function WarpGate({
           toneMapped={false}
         />
       </lineSegments>
-      <mesh
-        position={[0, 0, length * 0.45]}
-        onClick={(event) => {
-          if (!active) {
-            return;
-          }
-
-          event.stopPropagation();
-          onWarp?.();
-        }}
-        onPointerOver={(event) => {
-          if (!active) {
-            return;
-          }
-          event.stopPropagation();
-          document.body.style.cursor = 'pointer';
-          isHovered.current = true;
-          onHoverLabelChange?.(hoverLabel);
-        }}
-        onPointerOut={() => {
-          document.body.style.cursor = 'auto';
-          isHovered.current = false;
-          onHoverLabelChange?.(null);
-          onHoverScreenPosition?.(null);
-        }}
-      >
+      <mesh position={[0, 0, length * 0.45]} {...bindWarpPointer}>
         {/* 見た目より大きい当たり判定（手前の星に遮られにくい） */}
-        <sphereGeometry args={[Math.max(radius * 2.4, 0.16), 16, 16]} />
+        <sphereGeometry args={[Math.max(radius * 4.5, 0.28), 16, 16]} />
         <meshBasicMaterial
           color={lineColor}
           transparent
@@ -230,5 +262,12 @@ export function WarpGate({
         />
       </mesh>
     </group>
+    {active ? (
+      <mesh ref={approachHitRef} {...bindWarpPointer}>
+        <sphereGeometry args={[APPROACH_HIT_RADIUS, 16, 16]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} depthTest={false} />
+      </mesh>
+    ) : null}
+    </>
   );
 }

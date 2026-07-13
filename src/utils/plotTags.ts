@@ -1,5 +1,6 @@
 import type { UserPlotRow } from '../types/userPlot';
 import { isExplorationDummyPlot } from './explorationDummyPlots';
+import { isWarpLandingPlot } from './plotIdentity';
 import { wordTypeLabel } from './emotionWordsBridge';
 
 export type PlotTagId =
@@ -25,6 +26,10 @@ export const PLOT_TAGS: PlotTagDefinition[] = [
 ];
 
 export function getPlotTagIds(plot: UserPlotRow): PlotTagId[] {
+  if (isWarpLandingPlot(plot)) {
+    // ワープ着地用純感情は常に選択可能な語として扱う
+    return ['registered', 'exploration-dummy'];
+  }
   if (isExplorationDummyPlot(plot.word_id)) {
     return ['exploration-dummy'];
   }
@@ -71,10 +76,32 @@ export function searchPlotsByQuery(
     return [];
   }
 
-  return plots
-    .filter((plot) => {
-      const haystacks = [plot.word_id, plot.ruby ?? '', plot.meaning ?? ''];
-      return haystacks.some((text) => text.toLowerCase().includes(normalized));
-    })
-    .slice(0, limit);
+  const ranked: Array<{ plot: UserPlotRow; score: number }> = [];
+
+  for (const plot of plots) {
+    if (isExplorationDummyPlot(plot.word_id) || isWarpLandingPlot(plot)) {
+      continue;
+    }
+
+    const word = plot.word_id.toLowerCase();
+    const ruby = (plot.ruby ?? '').toLowerCase();
+
+    let score = 0;
+    if (word === normalized || ruby === normalized) {
+      score = 300;
+    } else if (word.startsWith(normalized) || ruby.startsWith(normalized)) {
+      score = 200;
+    } else if (word.includes(normalized) || ruby.includes(normalized)) {
+      score = 100;
+    } else {
+      continue;
+    }
+
+    ranked.push({ plot, score });
+  }
+
+  return ranked
+    .sort((a, b) => b.score - a.score || a.plot.word_id.localeCompare(b.plot.word_id, 'ja'))
+    .slice(0, limit)
+    .map((entry) => entry.plot);
 }
