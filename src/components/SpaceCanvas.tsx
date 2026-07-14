@@ -22,6 +22,9 @@ import {
   EXPLORATION_CAMERA_DISTANCE,
   EXPLORATION_NEARBY_RADIUS,
   EXPLORATION_SCREEN_ANCHOR,
+  SPACE_OVERVIEW_CAMERA_FOV,
+  SPACE_OVERVIEW_CAMERA_TARGET,
+  getSpaceOverviewCameraPosition,
 } from '../utils/explorationMode';
 import { getEmotionCenter } from '../utils/emotionSpaceLayout';
 import { findLinkedWarpDestination } from '../utils/warpGateLink';
@@ -34,11 +37,13 @@ import { findPlotByKey, getPlotKey } from '../utils/plotIdentity';
 import type { MinimapSyncState } from '../utils/emotionMinimapLayout';
 import { EmotionDirectionArrows } from './EmotionDirectionArrows';
 import { EmotionSpaceAreas } from './EmotionSpaceAreas';
+import { EmotionSystemOverview } from './EmotionSystemOverview';
 import { ExplorationDistantPlotCloud } from './ExplorationDistantPlotCloud';
 import { GravityAttractionParticles } from './GravityAttractionParticles';
 import { OrbitTrail } from './OrbitTrail';
 import { WarpGate } from './WarpGate';
 import { WordPlot } from './WordPlot';
+import type { EmotionId } from '../data/emotions';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [0, 3, 18];
 const DEFAULT_CAMERA_TARGET: [number, number, number] = [0, 0, 0];
@@ -70,6 +75,10 @@ interface SpaceCanvasProps {
   warpDestinationPlots?: UserPlotRow[];
   selectedId: string | null;
   explorationMode?: boolean;
+  /** ミニマップ俯瞰: 32感情全体を引きで表示 */
+  spaceOverview?: boolean;
+  /** 俯瞰開始時点で手前に置く星系（直前までいた主感情） */
+  spaceOverviewFocusId?: EmotionId | null;
   flowLabelExpiresAt?: Readonly<Record<string, number>>;
   flowLabelNow?: number;
   plotLabelDisplayMode?: PlotLabelDisplayMode;
@@ -81,6 +90,8 @@ interface SpaceCanvasProps {
   onHoveredScreenPosition?: (point: { x: number; y: number; visible: boolean } | null) => void;
   onMinimapSync?: (state: MinimapSyncState | null) => void;
   onWordSelect: (id: string, options?: { viaWarp?: boolean }) => void;
+  onSelectEmotionSystem?: (emotionId: EmotionId) => void;
+  onOverviewHoverEmotion?: (emotionId: EmotionId | null) => void;
 }
 
 interface CameraViewAlignRequest {
@@ -102,6 +113,8 @@ interface CameraControlsProps {
   /** 感情方向クリック時、カメラをその向きへ回す */
   viewAlignRequest?: CameraViewAlignRequest | null;
   interactionLockRef?: MutableRefObject<boolean>;
+  spaceOverview?: boolean;
+  spaceOverviewFocusId?: EmotionId | null;
   onCameraStateChange?: (state: Pick<MinimapSyncState, 'cameraPosition' | 'cameraTarget' | 'cameraUp'>) => void;
 }
 
@@ -125,6 +138,8 @@ function CameraControls({
   followOrbitTimeScale = 1,
   viewAlignRequest = null,
   interactionLockRef,
+  spaceOverview = false,
+  spaceOverviewFocusId = null,
   onCameraStateChange,
 }: CameraControlsProps) {
   const { camera, gl, size } = useThree();
@@ -467,21 +482,30 @@ function CameraControls({
   useEffect(() => {
     if (resetCount === 0) return;
 
-    camera.position.set(...DEFAULT_CAMERA_POSITION);
+    const resetPosition = spaceOverview
+      ? getSpaceOverviewCameraPosition(spaceOverviewFocusId)
+      : DEFAULT_CAMERA_POSITION;
+    const resetTarget = spaceOverview ? SPACE_OVERVIEW_CAMERA_TARGET : DEFAULT_CAMERA_TARGET;
+    const resetFov = spaceOverview ? SPACE_OVERVIEW_CAMERA_FOV : DEFAULT_CAMERA_FOV;
+
+    camera.position.set(...resetPosition);
+    camera.up.set(0, 1, 0);
     if (camera instanceof THREE.PerspectiveCamera) {
-      camera.fov = DEFAULT_CAMERA_FOV;
+      camera.fov = resetFov;
       clearSelectionViewOffset(camera);
       camera.updateProjectionMatrix();
     }
 
-    desiredTarget.current.set(...DEFAULT_CAMERA_TARGET);
-    baseTarget.current.set(...DEFAULT_CAMERA_TARGET);
-    smoothTarget.current.set(...DEFAULT_CAMERA_TARGET);
+    desiredTarget.current.set(...resetTarget);
+    baseTarget.current.set(...resetTarget);
+    smoothTarget.current.set(...resetTarget);
+    cameraOffsetDirection.current.copy(camera.position).sub(smoothTarget.current);
+    camera.lookAt(smoothTarget.current);
     viewOffsetProgress.current = 0;
     zoomProgress.current = 0;
     setFocusPhase('idle');
     prevFocusOnSelection.current = false;
-  }, [resetCount, camera]);
+  }, [resetCount, camera, spaceOverview, spaceOverviewFocusId]);
 
   return null;
 }
@@ -541,6 +565,8 @@ function SelectedScreenPointTracker({
 interface MinimapFocusTrackerProps {
   plot: UserPlotRow | null;
   active: boolean;
+  /** false のとき非アクティブでも sync を null にしない（俯瞰切替用） */
+  clearWhenInactive?: boolean;
   orbitOverride?: PlotOrbitOverride;
   orbitTimeScale?: number;
   cameraState: Pick<MinimapSyncState, 'cameraPosition' | 'cameraTarget' | 'cameraUp'> | null;
@@ -550,6 +576,7 @@ interface MinimapFocusTrackerProps {
 function MinimapFocusTracker({
   plot,
   active,
+  clearWhenInactive = true,
   orbitOverride,
   orbitTimeScale = 1,
   cameraState,
@@ -559,9 +586,11 @@ function MinimapFocusTracker({
 
   useEffect(() => {
     if (!active || !plot || !cameraState) {
-      onChange?.(null);
+      if (clearWhenInactive && (!active || !plot)) {
+        onChange?.(null);
+      }
     }
-  }, [active, plot, cameraState, onChange]);
+  }, [active, plot, cameraState, onChange, clearWhenInactive]);
 
   useFrame((state) => {
     if (!active || !plot || !cameraState || !onChange) return;
@@ -586,11 +615,61 @@ function MinimapFocusTracker({
   return null;
 }
 
+interface OverviewMinimapSyncProps {
+  active: boolean;
+  cameraState: Pick<MinimapSyncState, 'cameraPosition' | 'cameraTarget' | 'cameraUp'> | null;
+  focusEmotionId: EmotionId | null;
+  onChange?: (state: MinimapSyncState | null) => void;
+}
+
+function OverviewMinimapSync({
+  active,
+  cameraState,
+  focusEmotionId,
+  onChange,
+}: OverviewMinimapSyncProps) {
+  const frameCounter = useRef(0);
+
+  useFrame(() => {
+    if (!active || !cameraState || !onChange) {
+      return;
+    }
+
+    frameCounter.current = (frameCounter.current + 1) % 2;
+    if (frameCounter.current !== 0) {
+      return;
+    }
+
+    if (!focusEmotionId) {
+      onChange({
+        ...cameraState,
+        focusPosition: null,
+        primaryId: null,
+        primaryLabel: null,
+      });
+      return;
+    }
+
+    const center = getEmotionCenter(focusEmotionId);
+    const emotion = getEmotionById(focusEmotionId);
+    onChange({
+      ...cameraState,
+      focusPosition: [center.x, center.y, center.z],
+      primaryId: focusEmotionId,
+      primaryLabel: emotion.label,
+    });
+  });
+
+  return null;
+}
+
 export function SpaceCanvas({
   plots,
   warpDestinationPlots,
   selectedId,
   explorationMode = false,
+  spaceOverview = false,
+  spaceOverviewFocusId = null,
   flowLabelExpiresAt,
   flowLabelNow = 0,
   plotLabelDisplayMode = 'flow',
@@ -602,6 +681,8 @@ export function SpaceCanvas({
   onHoveredScreenPosition,
   onMinimapSync,
   onWordSelect,
+  onSelectEmotionSystem,
+  onOverviewHoverEmotion,
 }: SpaceCanvasProps) {
   const [resetCount, setResetCount] = useState(0);
   const [cameraState, setCameraState] = useState<Pick<
@@ -610,8 +691,28 @@ export function SpaceCanvas({
   > | null>(null);
   const [isDefaultView, setIsDefaultView] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [overviewHoveredEmotionId, setOverviewHoveredEmotionId] = useState<EmotionId | null>(null);
   const [viewAlignRequest, setViewAlignRequest] = useState<CameraViewAlignRequest | null>(null);
   const cameraInteractionLockRef = useRef(false);
+  const prevSpaceOverview = useRef(spaceOverview);
+
+  useEffect(() => {
+    if (spaceOverview === prevSpaceOverview.current) {
+      return;
+    }
+    prevSpaceOverview.current = spaceOverview;
+    if (spaceOverview) {
+      setIsDefaultView(true);
+      setResetCount((count) => count + 1);
+      return;
+    }
+    setOverviewHoveredEmotionId(null);
+    onOverviewHoverEmotion?.(null);
+    setIsDefaultView(false);
+  }, [spaceOverview, onOverviewHoverEmotion]);
+
+  const overviewMinimapFocusId = overviewHoveredEmotionId ?? spaceOverviewFocusId;
+
   const selectedPlot = useMemo(
     () => findPlotByKey(plots, selectedId),
     [plots, selectedId],
@@ -635,8 +736,8 @@ export function SpaceCanvas({
   }, [isSelectedPureOrbiting, selectedPlot?.primaryId]);
 
   const cameraTarget = useMemo((): [number, number, number] => {
-    if (isDefaultView || !selectedId) {
-      return DEFAULT_CAMERA_TARGET;
+    if (spaceOverview || isDefaultView || !selectedId) {
+      return spaceOverview ? SPACE_OVERVIEW_CAMERA_TARGET : DEFAULT_CAMERA_TARGET;
     }
 
     if (!selectedPlot) {
@@ -645,10 +746,10 @@ export function SpaceCanvas({
 
     // 公転・同意義回転中も単語自体を中心にする（followPlot が毎フレーム追従）
     return plotPositionFromRow(selectedPlot, 0, selectedMixedOrbit);
-  }, [isDefaultView, selectedId, selectedPlot, selectedMixedOrbit]);
+  }, [isDefaultView, selectedId, selectedPlot, selectedMixedOrbit, spaceOverview]);
 
   const nearbyPlotIds = useMemo(() => {
-    if (!selectedId || isDefaultView) {
+    if (spaceOverview || !selectedId || isDefaultView) {
       return null;
     }
 
@@ -660,10 +761,10 @@ export function SpaceCanvas({
     }
 
     return getNearbyPlotIds(plots, selectedId, undefined, mixedOrbitOverrides);
-  }, [plots, selectedId, isDefaultView, explorationMode, mixedOrbitOverrides]);
+  }, [plots, selectedId, isDefaultView, explorationMode, mixedOrbitOverrides, spaceOverview]);
 
   const sameEmotionOrbitPlots = useMemo(() => {
-    if (!explorationMode || isDefaultView || !selectedPlot) {
+    if (spaceOverview || !explorationMode || isDefaultView || !selectedPlot) {
       return [];
     }
 
@@ -673,18 +774,21 @@ export function SpaceCanvas({
         plot.primaryId === selectedPlot.primaryId &&
         isPureEmotionPlot(plot),
     );
-  }, [explorationMode, isDefaultView, plots, selectedPlot]);
+  }, [explorationMode, isDefaultView, plots, selectedPlot, spaceOverview]);
 
   const interactivePlots = useMemo(() => {
+    if (spaceOverview) {
+      return [];
+    }
     if (!explorationMode || !nearbyPlotIds) {
       return plots;
     }
 
     return plots.filter((plot) => getPlotKey(plot) === selectedId || nearbyPlotIds.has(getPlotKey(plot)));
-  }, [explorationMode, nearbyPlotIds, plots, selectedId]);
+  }, [explorationMode, nearbyPlotIds, plots, selectedId, spaceOverview]);
 
   const distantSameSystemPlots = useMemo(() => {
-    if (!explorationMode || !nearbyPlotIds || !selectedPlot) {
+    if (spaceOverview || !explorationMode || !nearbyPlotIds || !selectedPlot) {
       return [];
     }
 
@@ -694,9 +798,12 @@ export function SpaceCanvas({
         && plot.primaryId === selectedPlot.primaryId
         && !nearbyPlotIds.has(getPlotKey(plot)),
     );
-  }, [explorationMode, nearbyPlotIds, plots, selectedId, selectedPlot]);
+  }, [explorationMode, nearbyPlotIds, plots, selectedId, selectedPlot, spaceOverview]);
 
   const distantOtherSystemPlots = useMemo(() => {
+    if (spaceOverview) {
+      return plots;
+    }
     if (!explorationMode || !nearbyPlotIds || !selectedPlot) {
       return [];
     }
@@ -707,12 +814,12 @@ export function SpaceCanvas({
         && plot.primaryId !== selectedPlot.primaryId
         && !nearbyPlotIds.has(getPlotKey(plot)),
     );
-  }, [explorationMode, nearbyPlotIds, plots, selectedId, selectedPlot]);
+  }, [explorationMode, nearbyPlotIds, plots, selectedId, selectedPlot, spaceOverview]);
 
-  const isExplorationFocused = explorationMode && !isDefaultView && selectedId !== null;
+  const isExplorationFocused = explorationMode && !spaceOverview && !isDefaultView && selectedId !== null;
 
   const warpGatePlots = useMemo(() => {
-    if (!explorationMode || isDefaultView || !selectedPlot) {
+    if (spaceOverview || !explorationMode || isDefaultView || !selectedPlot) {
       return [];
     }
 
@@ -723,7 +830,7 @@ export function SpaceCanvas({
     }
 
     return [selectedPlot];
-  }, [explorationMode, isDefaultView, selectedPlot]);
+  }, [explorationMode, isDefaultView, selectedPlot, spaceOverview]);
 
   const selectedWarpGatePlot = useMemo(() => {
     if (!selectedPlot || warpGatePlots.length === 0) {
@@ -898,40 +1005,59 @@ export function SpaceCanvas({
           explorationFocus={isExplorationFocused}
           explorationAnchor={EXPLORATION_SCREEN_ANCHOR}
           explorationDistance={EXPLORATION_CAMERA_DISTANCE}
-          followPlot={isSelectedOrbitingPlot ? selectedPlot : null}
+          followPlot={isSelectedOrbitingPlot && !spaceOverview ? selectedPlot : null}
           followOrbitOverride={selectedMixedOrbit}
           followOrbitTimeScale={getOrbitTimeScale(selectedPlot)}
-          viewAlignRequest={viewAlignRequest}
+          viewAlignRequest={spaceOverview ? null : viewAlignRequest}
           interactionLockRef={cameraInteractionLockRef}
+          spaceOverview={spaceOverview}
+          spaceOverviewFocusId={spaceOverviewFocusId}
           onCameraStateChange={handleCameraStateChange}
         />
         <MinimapFocusTracker
           plot={selectedPlot}
-          active={!isDefaultView && selectedPlot !== null}
+          active={!spaceOverview && !isDefaultView && selectedPlot !== null}
+          clearWhenInactive={!spaceOverview}
           orbitOverride={selectedPlot ? mixedOrbitOverrides.get(selectedPlot.word_id) : undefined}
           orbitTimeScale={getOrbitTimeScale(selectedPlot)}
           cameraState={cameraState}
           onChange={handleMinimapSync}
         />
+        <OverviewMinimapSync
+          active={spaceOverview}
+          cameraState={cameraState}
+          focusEmotionId={overviewMinimapFocusId}
+          onChange={handleMinimapSync}
+        />
         <SelectedScreenPointTracker
           plot={selectedPlot}
-          active={explorationMode && !isDefaultView && selectedPlot !== null}
+          active={explorationMode && !spaceOverview && !isDefaultView && selectedPlot !== null}
           orbitOverride={selectedPlot ? mixedOrbitOverrides.get(selectedPlot.word_id) : undefined}
           orbitTimeScale={getOrbitTimeScale(selectedPlot)}
           onChange={onSelectedScreenPosition}
         />
         <SelectedScreenPointTracker
           plot={hoveredPlot}
-          active={explorationMode && !isDefaultView && hoveredPlot !== null}
+          active={explorationMode && !spaceOverview && !isDefaultView && hoveredPlot !== null}
           orbitOverride={hoveredPlot ? mixedOrbitOverrides.get(hoveredPlot.word_id) : undefined}
           orbitTimeScale={getOrbitTimeScale(hoveredPlot)}
           onChange={onHoveredScreenPosition}
         />
 
-        <EmotionSpaceAreas lite={explorationMode} />
+        <EmotionSpaceAreas lite={explorationMode && !spaceOverview} />
 
         <Suspense fallback={null}>
-          {selectedOrbitCenter && selectedPlot && (
+          {spaceOverview && (
+            <EmotionSystemOverview
+              focusEmotionId={spaceOverviewFocusId}
+              onSelectSystem={onSelectEmotionSystem}
+              onHoverSystem={(emotionId) => {
+                setOverviewHoveredEmotionId(emotionId);
+                onOverviewHoverEmotion?.(emotionId);
+              }}
+            />
+          )}
+          {selectedOrbitCenter && selectedPlot && !spaceOverview && (
             <pointLight
               position={selectedOrbitCenter}
               color={getPrimaryEmotionColor(selectedPlot.primaryId)}
@@ -940,7 +1066,7 @@ export function SpaceCanvas({
               decay={2}
             />
           )}
-          {explorationMode && selectedPlot && !isDefaultView && !isSelectedPureOrbiting && (
+          {explorationMode && selectedPlot && !spaceOverview && !isDefaultView && !isSelectedPureOrbiting && (
             <GravityAttractionParticles
               plot={selectedPlot}
               orbitOverride={mixedOrbitOverrides.get(selectedPlot.word_id)}
@@ -951,7 +1077,7 @@ export function SpaceCanvas({
                 )}
             />
           )}
-          {explorationMode && selectedPlot && !isDefaultView && (
+          {explorationMode && selectedPlot && !spaceOverview && !isDefaultView && (
             <EmotionDirectionArrows
               plot={selectedPlot}
               plots={plots}
@@ -961,7 +1087,7 @@ export function SpaceCanvas({
               interactionLockRef={cameraInteractionLockRef}
             />
           )}
-          {visibleWarpGateEntries.map((entry) => (
+          {!spaceOverview && visibleWarpGateEntries.map((entry) => (
             <WarpGate
               key={entry.key}
               targetEmotionId={entry.plot.secondaryId}
@@ -979,7 +1105,7 @@ export function SpaceCanvas({
               onHoverScreenPosition={onHoveredScreenPosition}
             />
           ))}
-          {sameEmotionOrbitPlots.map((plot) => (
+          {!spaceOverview && sameEmotionOrbitPlots.map((plot) => (
             <OrbitTrail
               key={`same-emotion-orbit-${plot.word_id}`}
               plot={plot}

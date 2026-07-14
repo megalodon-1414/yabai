@@ -28,6 +28,8 @@ const UI_COLOR_TRANSITION =
 interface EmotionMinimapProps {
   syncState: MinimapSyncState | null;
   uiTheme: EmotionUiTheme;
+  active?: boolean;
+  onClick?: () => void;
 }
 
 function computeFitDistance(camera: THREE.PerspectiveCamera, boundingRadius: number): number {
@@ -315,7 +317,12 @@ function MapPinIcon({ color }: { color: string }) {
   );
 }
 
-export function EmotionMinimap({ syncState, uiTheme }: EmotionMinimapProps) {
+export function EmotionMinimap({
+  syncState,
+  uiTheme,
+  active = false,
+  onClick,
+}: EmotionMinimapProps) {
   const positionInfo = useMemo(() => {
     if (!syncState?.focusPosition || !syncState.primaryId) {
       return null;
@@ -329,13 +336,29 @@ export function EmotionMinimap({ syncState, uiTheme }: EmotionMinimapProps) {
 
   return (
     <div
-      aria-label="感情空間ミニマップ"
+      role="button"
+      tabIndex={0}
+      aria-label={active ? '感情空間ミニマップ（俯瞰中・クリックで探索に戻る）' : '感情空間ミニマップ（クリックで全体俯瞰）'}
+      aria-pressed={active}
       className="emotion-minimap-holo"
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick) {
+          return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
       style={{
         position: 'relative',
         width: `${MAP_WIDTH}px`,
-        pointerEvents: 'none',
+        pointerEvents: onClick ? 'auto' : 'none',
+        cursor: onClick ? 'pointer' : 'default',
         transition: UI_COLOR_TRANSITION,
+        outline: active ? `1px solid ${uiTheme.accentBorderStrong}` : 'none',
+        boxShadow: active ? `0 0 16px ${uiTheme.holoGlow}` : undefined,
       }}
     >
       <style>

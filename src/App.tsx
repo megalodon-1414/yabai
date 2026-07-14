@@ -13,7 +13,7 @@ import {
   updatePlot,
 } from './utils/plotHelpers';
 import { isExplorationDummyPlot, mergeExplorationDummyPlots } from './utils/explorationDummyPlots';
-import { canMoveWithinEmotionSystem } from './utils/plotFromUserPlot';
+import { canMoveWithinEmotionSystem, isPureEmotionPlot } from './utils/plotFromUserPlot';
 import {
   ensureEmotionSystemLandings,
   findPlotByKey,
@@ -29,6 +29,7 @@ import { DEFAULT_EMOTION_UI_ACCENT, getEmotionUiTheme } from './utils/emotionUiT
 import { resolvePrimaryEmotionLabel } from './utils/emotionCoordinates';
 import { filterPlotsByTags, getPlotKindLabel, type PlotTagId } from './utils/plotTags';
 import { mergeWithSeedPlots } from './utils/seedPlots';
+import type { EmotionId } from './data/emotions';
 import {
   SEARCH_GAME_MIN_REFERENCE_HOPS,
   SEARCH_GAME_UNREACHABLE_DISTANCE,
@@ -68,15 +69,35 @@ function App() {
   const [minimapSync, setMinimapSync] = useState<MinimapSyncState | null>(null);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<PlotTagId>>(() => new Set());
   const [isExplorationMode] = useState(true);
+  const [spaceOverview, setSpaceOverview] = useState(false);
+  const [spaceOverviewFocusId, setSpaceOverviewFocusId] = useState<EmotionId | null>(null);
+  const [overviewHoveredEmotionId, setOverviewHoveredEmotionId] = useState<EmotionId | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchGameTargetId, setSearchGameTargetId] = useState<string | null>(null);
   const [searchGamePreviousDistance, setSearchGamePreviousDistance] = useState<number | null>(null);
   const [searchGameReferenceDistance, setSearchGameReferenceDistance] = useState(SEARCH_GAME_MIN_REFERENCE_HOPS);
+  const [panelMorph, setPanelMorph] = useState<{
+    word: string;
+    ruby: string;
+    meaning: string;
+    usage: string;
+    primaryLabel: string;
+    secondaryLabel: string;
+    intensity: number;
+    kindLabel: string;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    phase: 'start' | 'move' | 'expand' | 'details';
+  } | null>(null);
   const searchGameLastMeasureRef = useRef<{ wordId: string | null; distance: number | null }>({
     wordId: null,
     distance: null,
   });
+  const nextWordPanelRef = useRef<HTMLDivElement>(null);
+  const skipInfoPanelFadeRef = useRef(false);
   const { plotStatus } = usePlotSubmit();
 
   const togglePlotLabelDisplayMode = useCallback(() => {
@@ -205,11 +226,20 @@ function App() {
   );
 
   const emotionUiTheme = useMemo(() => {
-    const accent = selectedPlot
-      ? getPrimaryEmotionColor(selectedPlot.primaryId)
-      : DEFAULT_EMOTION_UI_ACCENT;
+    const overviewAccentId = overviewHoveredEmotionId ?? (spaceOverview ? spaceOverviewFocusId : null);
+    const accent = overviewAccentId
+      ? getPrimaryEmotionColor(overviewAccentId)
+      : selectedPlot
+        ? getPrimaryEmotionColor(selectedPlot.primaryId)
+        : DEFAULT_EMOTION_UI_ACCENT;
     return getEmotionUiTheme(accent, backgroundTheme);
-  }, [selectedPlot, backgroundTheme]);
+  }, [
+    selectedPlot,
+    backgroundTheme,
+    spaceOverview,
+    spaceOverviewFocusId,
+    overviewHoveredEmotionId,
+  ]);
 
   const hoveredPlot = useMemo(
     () =>
@@ -234,6 +264,13 @@ function App() {
     if (!infoPanelWordId) {
       setInfoPanelWordId(selectedId);
       setIsInfoPanelVisible(true);
+      return;
+    }
+
+    if (skipInfoPanelFadeRef.current) {
+      skipInfoPanelFadeRef.current = false;
+      setInfoPanelWordId(selectedId);
+      setIsInfoPanelVisible(false);
       return;
     }
 
@@ -284,7 +321,35 @@ function App() {
       }
     }
 
-    setSelectedId(getPlotKey(next));
+    const nextKey = getPlotKey(next);
+    const isFromNextWord =
+      !hoveredWarpGateLabel
+      && Boolean(hoveredWordId)
+      && (hoveredWordId === id || hoveredWordId === nextKey || next.word_id === nextWordLabel);
+
+    if (isFromNextWord && mainRef.current && nextWordPanelRef.current) {
+      const mainRect = mainRef.current.getBoundingClientRect();
+      const fromRect = nextWordPanelRef.current.getBoundingClientRect();
+      skipInfoPanelFadeRef.current = true;
+      setPanelMorph({
+        word: next.word_id,
+        ruby: next.ruby?.trim() ?? '',
+        meaning: next.meaning?.trim()
+          || 'この単語の意味データはまだ登録されていません。',
+        usage: next.usageExample?.trim() ?? '',
+        primaryLabel: resolvePrimaryEmotionLabel(next.primaryId, next.primaryLabel),
+        secondaryLabel: resolvePrimaryEmotionLabel(next.secondaryId, next.secondaryLabel),
+        intensity: next.intensity,
+        kindLabel: getPlotKindLabel(next),
+        left: fromRect.left - mainRect.left,
+        top: fromRect.top - mainRect.top,
+        width: fromRect.width,
+        height: fromRect.height,
+        phase: 'start',
+      });
+    }
+
+    setSelectedId(nextKey);
     if (!isExplorationMode && !isExplorationDummyPlot(next.word_id)) {
       setIsEditorOpen(true);
     }
@@ -422,6 +487,35 @@ function App() {
     setMinimapSync(state);
   }, []);
 
+  const handleToggleSpaceOverview = useCallback(() => {
+    setSpaceOverview((prev) => {
+      if (prev) {
+        setSpaceOverviewFocusId(null);
+        setOverviewHoveredEmotionId(null);
+        return false;
+      }
+      setSpaceOverviewFocusId(selectedPlot?.primaryId ?? null);
+      setOverviewHoveredEmotionId(null);
+      return true;
+    });
+  }, [selectedPlot?.primaryId]);
+
+  const handleSelectEmotionSystem = useCallback((emotionId: EmotionId) => {
+    const landing =
+      displayPlots.find((plot) => plot.primaryId === emotionId && isPureEmotionPlot(plot))
+      ?? displayPlots.find((plot) => plot.primaryId === emotionId);
+    if (landing) {
+      handleWordSelect(getPlotKey(landing), { viaSearch: true });
+    }
+    setSpaceOverviewFocusId(null);
+    setOverviewHoveredEmotionId(null);
+    setSpaceOverview(false);
+  }, [displayPlots]);
+
+  const handleOverviewHoverEmotion = useCallback((emotionId: EmotionId | null) => {
+    setOverviewHoveredEmotionId(emotionId);
+  }, []);
+
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       setFlowLabelNow(Date.now());
@@ -450,6 +544,7 @@ function App() {
 
   const showInfoGuideLine =
     isExplorationMode &&
+    !spaceOverview &&
     isInfoPanelVisible &&
     infoPanelPlot &&
     selectedScreenPoint &&
@@ -464,7 +559,7 @@ function App() {
   const meaningText =
     infoPanelPlot?.meaning?.trim() ||
     'この単語の意味データはまだ登録されていません。';
-  const meaningWrapWidth = useMemo(() => {
+  const meaningLayout = useMemo(() => {
     const rem = Number.parseFloat(currentWordPanel.bodyFontSize);
     const fontPx = (Number.isFinite(rem) ? rem : 1) * 16;
     const charAdvance = fontPx * 1.9;
@@ -473,8 +568,15 @@ function App() {
       Math.floor(currentWordPanel.bodyMaxHeight / charAdvance),
     );
     const columns = Math.max(1, Math.ceil(Array.from(meaningText).length / charsPerColumn));
-    return Math.ceil(columns * fontPx * 1.25);
+    return {
+      columns,
+      width: Math.ceil(columns * fontPx * 1.15),
+    };
   }, [meaningText, currentWordPanel.bodyFontSize, currentWordPanel.bodyMaxHeight]);
+  const meaningUsageGap =
+    meaningLayout.columns <= 1
+      ? Math.max(8, Math.round(currentWordPanel.innerGap * 0.65))
+      : currentWordPanel.bodyTextGap;
 
   const currentWordAsideRef = useRef<HTMLElement>(null);
   const [measuredCurrentWordWidth, setMeasuredCurrentWordWidth] = useState(currentWordPanel.width);
@@ -496,7 +598,7 @@ function App() {
     currentWordPanel.width,
     infoPanelPlot,
     meaningText,
-    meaningWrapWidth,
+    meaningLayout.width,
     isInfoPanelVisible,
   ]);
 
@@ -508,14 +610,146 @@ function App() {
     0,
     mainSize.width - uiGroupRightMargin - measuredCurrentWordWidth,
   );
+  // Next→Current の移動先: 「現在の語」ラベル込みの語カラムぶん（右端基準）
+  const morphWordStageWidth = Math.max(
+    nextWordPanel.width,
+    currentWordPanel.paddingX * 2
+      + currentWordPanel.wordColumnWidth
+      + currentWordPanel.innerGap
+      + Math.round(currentWordPanel.wordColumnWidth * 0.7)
+      + currentWordPanel.paddingLeft
+      + 4,
+  );
+  const morphWordStageHeight = Math.max(
+    nextWordPanel.expandedHeight,
+    currentWordPanel.paddingY * 2
+      + currentWordPanel.tickerHeight
+      + currentWordPanel.innerGap * 3
+      + Math.round(Number.parseFloat(currentWordPanel.wordFontSize) * 16 * 4.2),
+  );
+  const morphWordStageLeft = Math.max(
+    0,
+    mainSize.width - uiGroupRightMargin - morphWordStageWidth,
+  );
+
+  const finishPanelMorph = useCallback(() => {
+    setPanelMorph(null);
+    setIsInfoPanelVisible(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!panelMorph || panelMorph.phase !== 'start') {
+      return;
+    }
+
+    let frame2 = 0;
+    const frame1 = window.requestAnimationFrame(() => {
+      frame2 = window.requestAnimationFrame(() => {
+        // 1. 移動しながらフォント拡大。「現在の語」表示込みの位置へ一気に寄せる
+        setPanelMorph((prev) =>
+          prev
+            ? {
+                ...prev,
+                phase: 'move',
+                left: morphWordStageLeft,
+                top: currentWordPanel.y,
+                width: morphWordStageWidth,
+                height: morphWordStageHeight,
+              }
+            : null,
+        );
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame1);
+      window.cancelAnimationFrame(frame2);
+    };
+  }, [
+    panelMorph,
+    morphWordStageLeft,
+    morphWordStageWidth,
+    morphWordStageHeight,
+    currentWordPanel.y,
+  ]);
+
+  useEffect(() => {
+    if (!panelMorph) {
+      return;
+    }
+
+    if (panelMorph.phase === 'move') {
+      const timeoutId = window.setTimeout(() => {
+        const toWidth = Math.max(currentWordPanel.width, measuredCurrentWordWidth || currentWordPanel.width);
+        setPanelMorph((prev) =>
+          prev
+            ? {
+                ...prev,
+                phase: 'expand',
+                left: Math.max(0, mainSize.width - uiGroupRightMargin - toWidth),
+                width: toWidth,
+                height: Math.max(currentWordPanel.height, currentWordPanel.innerMinHeight),
+              }
+            : null,
+        );
+      }, 420);
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    if (panelMorph.phase === 'expand') {
+      const timeoutId = window.setTimeout(() => {
+        setPanelMorph((prev) => (prev ? { ...prev, phase: 'details' } : null));
+      }, 460);
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    if (panelMorph.phase === 'details') {
+      const timeoutId = window.setTimeout(() => {
+        finishPanelMorph();
+      }, 420);
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    return undefined;
+  }, [
+    panelMorph,
+    currentWordPanel.width,
+    currentWordPanel.height,
+    currentWordPanel.innerMinHeight,
+    measuredCurrentWordWidth,
+    mainSize.width,
+    uiGroupRightMargin,
+    finishPanelMorph,
+  ]);
 
   const showHoverGuide =
     isExplorationMode &&
+    !spaceOverview &&
     isInfoPanelVisible &&
     nextWordLabel &&
     hoveredScreenPoint &&
     mainSize.width > 0 &&
     mainSize.height > 0;
+
+  const morphAtCurrent = Boolean(
+    panelMorph
+      && (panelMorph.phase === 'move'
+        || panelMorph.phase === 'expand'
+        || panelMorph.phase === 'details'),
+  );
+  const showMorphRuby = Boolean(
+    panelMorph && (panelMorph.phase === 'expand' || panelMorph.phase === 'details'),
+  );
+  const showMorphDetails = Boolean(panelMorph && panelMorph.phase === 'details');
+  const morphMoveEasing = '400ms cubic-bezier(0.22, 1, 0.36, 1)';
+  const morphBoxTransition = panelMorph?.phase === 'move'
+    ? `left ${morphMoveEasing}, top ${morphMoveEasing}, width ${morphMoveEasing}, height ${morphMoveEasing}`
+    : panelMorph?.phase === 'expand'
+      ? 'left 440ms cubic-bezier(0.22, 1, 0.36, 1), width 440ms cubic-bezier(0.22, 1, 0.36, 1), height 440ms cubic-bezier(0.22, 1, 0.36, 1)'
+      : 'none';
+  const morphFontTransition = panelMorph?.phase === 'move' || panelMorph?.phase === 'expand'
+    ? `font-size ${morphMoveEasing}`
+    : 'none';
 
 
   return (
@@ -548,6 +782,8 @@ function App() {
           warpDestinationPlots={displayPlots}
           selectedId={selectedId}
           explorationMode={isExplorationMode}
+          spaceOverview={spaceOverview}
+          spaceOverviewFocusId={spaceOverviewFocusId}
           flowLabelExpiresAt={flowLabelExpiresAt}
           flowLabelNow={flowLabelNow}
           plotLabelDisplayMode={plotLabelDisplayMode}
@@ -559,6 +795,8 @@ function App() {
           onHoveredScreenPosition={handleHoveredScreenPosition}
           onMinimapSync={handleMinimapSync}
           onWordSelect={handleWordSelect}
+          onSelectEmotionSystem={handleSelectEmotionSystem}
+          onOverviewHoverEmotion={handleOverviewHoverEmotion}
         />
 
         {isExplorationMode && searchGameTargetPlot && searchGameDistance != null && (
@@ -591,7 +829,13 @@ function App() {
               width: `${MAP_WIDTH}px`,
             }}
           >
-            <EmotionMinimap syncState={minimapSync} uiTheme={emotionUiTheme} />
+            <EmotionMinimap
+              syncState={minimapSync}
+              uiTheme={emotionUiTheme}
+              active={spaceOverview}
+              onClick={handleToggleSpaceOverview}
+            />
+            {!spaceOverview && (
             <ExplorationToolsPanel
               width={MAP_WIDTH}
               uiTheme={emotionUiTheme}
@@ -605,6 +849,28 @@ function App() {
               onStartSearchGame={handleStartSearchGame}
               onQuitSearchGame={handleQuitSearchGame}
             />
+            )}
+            {spaceOverview && (
+              <button
+                type="button"
+                onClick={handleToggleSpaceOverview}
+                style={{
+                  padding: '10px 12px',
+                  border: `1px solid ${emotionUiTheme.accentBorder}`,
+                  borderLeft: `3px solid ${emotionUiTheme.accentBorderStrong}`,
+                  borderRadius: '8px',
+                  backgroundColor: emotionUiTheme.panelBackground,
+                  color: emotionUiTheme.textPrimary,
+                  fontSize: '0.82rem',
+                  letterSpacing: '0.08em',
+                  cursor: 'pointer',
+                  backdropFilter: 'blur(12px)',
+                  transition: UI_COLOR_TRANSITION,
+                }}
+              >
+                探索に戻る
+              </button>
+            )}
           </div>
         )}
 
@@ -698,8 +964,9 @@ function App() {
           </svg>
         )}
 
-        {isExplorationMode && infoPanelPlot && (
+        {isExplorationMode && !spaceOverview && infoPanelPlot && (
           <div
+            ref={nextWordPanelRef}
             style={{
               position: 'absolute',
               left: `${nextWordPanelLeft}px`,
@@ -715,9 +982,11 @@ function App() {
               boxShadow: emotionUiTheme.panelShadow,
               backdropFilter: 'blur(12px)',
               color: emotionUiTheme.textPrimary,
-              opacity: isInfoPanelVisible ? 1 : 0,
+              opacity: panelMorph ? 0 : isInfoPanelVisible ? 1 : 0,
               overflow: 'hidden',
-              transition: `opacity 150ms ease, height 160ms ease, ${UI_COLOR_TRANSITION}`,
+              transition: panelMorph
+                ? 'opacity 80ms ease'
+                : `opacity 150ms ease, height 160ms ease, ${UI_COLOR_TRANSITION}`,
               pointerEvents: 'none',
             }}
           >
@@ -842,7 +1111,207 @@ function App() {
           </button>
         )}
 
-        {isExplorationMode && infoPanelPlot && (
+        {panelMorph && isExplorationMode && !spaceOverview && (
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: `${panelMorph.left}px`,
+                top: `${panelMorph.top}px`,
+                width: `${panelMorph.width}px`,
+                height: `${panelMorph.height}px`,
+                zIndex: 4,
+                padding: `${currentWordPanel.paddingY}px ${currentWordPanel.paddingX}px`,
+                border: `1px solid ${emotionUiTheme.accentBorder}`,
+                borderLeft: `4px solid ${emotionUiTheme.accentBorderStrong}`,
+                borderRadius: `${currentWordPanel.borderRadius}px`,
+                backgroundColor: emotionUiTheme.panelBackground,
+                boxShadow: emotionUiTheme.panelShadow,
+                backdropFilter: 'blur(12px)',
+                color: emotionUiTheme.textPrimary,
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+                pointerEvents: 'none',
+                display: 'flex',
+                flexDirection: 'row-reverse',
+                alignItems: 'flex-start',
+                justifyContent: 'flex-start',
+                gap: `${currentWordPanel.gap}px`,
+                transition: morphBoxTransition,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'row-reverse',
+                  alignItems: 'flex-start',
+                  gap: `${currentWordPanel.innerGap}px`,
+                  flex: '0 0 auto',
+                  paddingLeft: `${currentWordPanel.paddingLeft}px`,
+                  borderLeft: `1px solid ${emotionUiTheme.divider}`,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: `${currentWordPanel.innerGap}px`,
+                    opacity: morphAtCurrent ? 1 : 0,
+                    transition: `opacity ${morphMoveEasing}`,
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'block',
+                      width: 0,
+                      height: 0,
+                      borderTop: `${currentWordPanel.arrowBorder}px solid transparent`,
+                      borderBottom: `${currentWordPanel.arrowBorder}px solid transparent`,
+                      borderRight: `${currentWordPanel.arrowBorder + 4}px solid ${emotionUiTheme.accentMuted}`,
+                    }}
+                  />
+                  <p
+                    style={{
+                      writingMode: 'vertical-rl',
+                      textOrientation: 'mixed',
+                      margin: 0,
+                      fontSize: currentWordPanel.sectionLabelFontSize,
+                      letterSpacing: '0.18em',
+                      lineHeight: 1.2,
+                      color: emotionUiTheme.accentMuted,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    現在の語
+                  </p>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: `${currentWordPanel.innerGap}px`,
+                    width: `${currentWordPanel.wordColumnWidth}px`,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <p
+                    style={{
+                      writingMode: 'vertical-rl',
+                      textOrientation: 'mixed',
+                      margin: 0,
+                      fontSize: morphAtCurrent
+                        ? currentWordPanel.wordFontSize
+                        : nextWordPanel.wordFontSize,
+                      fontWeight: 700,
+                      lineHeight: 1.25,
+                      letterSpacing: '0.08em',
+                      transition: morphFontTransition,
+                    }}
+                  >
+                    {panelMorph.word}
+                  </p>
+                  {panelMorph.ruby && (
+                    <p
+                      style={{
+                        writingMode: 'vertical-rl',
+                        textOrientation: 'mixed',
+                        margin: 0,
+                        fontSize: `calc(${currentWordPanel.wordFontSize} * 0.78)`,
+                        lineHeight: 1.35,
+                        letterSpacing: '0.1em',
+                        color: emotionUiTheme.textMuted,
+                        opacity: showMorphRuby ? 1 : 0,
+                        maxHeight: showMorphRuby ? '100%' : 0,
+                        transform: showMorphRuby ? 'translateY(0)' : 'translateY(-8px)',
+                        transition: 'opacity 360ms ease, transform 360ms ease, max-height 360ms ease',
+                      }}
+                    >
+                      {`【${panelMorph.ruby}】`}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'row-reverse',
+                  alignItems: 'flex-start',
+                  gap: `${currentWordPanel.bodyTextGap}px`,
+                  flex: '0 0 auto',
+                  opacity: showMorphDetails ? 1 : 0,
+                  transform: showMorphDetails ? 'translateX(0)' : 'translateX(12px)',
+                  transition: 'opacity 360ms ease, transform 360ms ease',
+                  pointerEvents: 'none',
+                  maxWidth: showMorphDetails ? '100%' : 0,
+                  overflow: 'hidden',
+                }}
+              >
+                <p
+                  style={{
+                    writingMode: 'vertical-rl',
+                    textOrientation: 'mixed',
+                    margin: 0,
+                    maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
+                    fontSize: currentWordPanel.bodyFontSize,
+                    lineHeight: 1.9,
+                    letterSpacing: '0.06em',
+                    color: emotionUiTheme.textSecondary,
+                    flex: '0 0 auto',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {panelMorph.meaning}
+                </p>
+                {panelMorph.usage && (
+                  <p
+                    style={{
+                      writingMode: 'vertical-rl',
+                      textOrientation: 'mixed',
+                      margin: 0,
+                      maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
+                      fontSize: currentWordPanel.usageFontSize,
+                      lineHeight: 1.8,
+                      letterSpacing: '0.06em',
+                      color: emotionUiTheme.textMuted,
+                      flex: '0 0 auto',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {`用例：${panelMorph.usage}`}
+                  </p>
+                )}
+                <dl
+                  style={{
+                    writingMode: 'vertical-rl',
+                    textOrientation: 'mixed',
+                    display: 'grid',
+                    gridAutoFlow: 'column',
+                    gridTemplateRows: 'auto auto',
+                    columnGap: `${currentWordPanel.columnGap}px`,
+                    rowGap: `${currentWordPanel.rowGap}px`,
+                    margin: 0,
+                    padding: '2px 0',
+                    fontSize: currentWordPanel.dlFontSize,
+                    flex: '0 0 auto',
+                  }}
+                >
+                  <dt style={{ color: emotionUiTheme.textMuted }}>主感情</dt>
+                  <dd style={{ margin: 0, fontWeight: 700 }}>{panelMorph.primaryLabel}</dd>
+                  <dt style={{ color: emotionUiTheme.textMuted }}>副感情</dt>
+                  <dd style={{ margin: 0, fontWeight: 700 }}>{panelMorph.secondaryLabel}</dd>
+                  <dt style={{ color: emotionUiTheme.textMuted }}>強度</dt>
+                  <dd style={{ margin: 0, fontWeight: 700 }}>{panelMorph.intensity}</dd>
+                  <dt style={{ color: emotionUiTheme.textMuted }}>種別</dt>
+                  <dd style={{ margin: 0, fontWeight: 700 }}>{panelMorph.kindLabel}</dd>
+                </dl>
+              </div>
+            </div>
+        )}
+
+        {isExplorationMode && !spaceOverview && infoPanelPlot && (
           <aside
             ref={currentWordAsideRef}
             style={{
@@ -864,8 +1333,10 @@ function App() {
               backdropFilter: 'blur(12px)',
               color: emotionUiTheme.textPrimary,
               pointerEvents: 'none',
-              opacity: isInfoPanelVisible ? 1 : 0,
-              transition: `opacity 150ms ease, ${UI_COLOR_TRANSITION}`,
+              opacity: panelMorph ? 0 : isInfoPanelVisible ? 1 : 0,
+              transition: panelMorph
+                ? 'opacity 80ms ease'
+                : `opacity 150ms ease, ${UI_COLOR_TRANSITION}`,
               overflow: 'visible',
               boxSizing: 'border-box',
             }}
@@ -994,7 +1465,7 @@ function App() {
                   flexDirection: 'row-reverse',
                   alignItems: 'flex-start',
                   justifyContent: 'flex-start',
-                  gap: `${currentWordPanel.bodyTextGap}px`,
+                  gap: `${meaningUsageGap}px`,
                   flex: '0 0 auto',
                   overflow: 'visible',
                 }}
@@ -1004,8 +1475,13 @@ function App() {
                     writingMode: 'vertical-rl',
                     textOrientation: 'mixed',
                     margin: 0,
-                    height: `${currentWordPanel.bodyMaxHeight}px`,
-                    width: `${meaningWrapWidth}px`,
+                    height: meaningLayout.columns <= 1
+                      ? 'auto'
+                      : `${currentWordPanel.bodyMaxHeight}px`,
+                    maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
+                    width: meaningLayout.columns <= 1
+                      ? 'max-content'
+                      : `${meaningLayout.width}px`,
                     fontSize: currentWordPanel.bodyFontSize,
                     lineHeight: 1.9,
                     letterSpacing: '0.06em',
@@ -1023,7 +1499,10 @@ function App() {
                       writingMode: 'vertical-rl',
                       textOrientation: 'mixed',
                       margin: 0,
-                      height: `${currentWordPanel.bodyMaxHeight}px`,
+                      height: meaningLayout.columns <= 1
+                        ? 'auto'
+                        : `${currentWordPanel.bodyMaxHeight}px`,
+                      maxHeight: `${currentWordPanel.bodyMaxHeight}px`,
                       fontSize: currentWordPanel.usageFontSize,
                       lineHeight: 1.8,
                       letterSpacing: '0.06em',
